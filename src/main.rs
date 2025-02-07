@@ -2,7 +2,6 @@ use bevy::{
     app::{App, Startup},
     asset::Assets,
     color::Color,
-    core_pipeline::core_2d::Camera2d,
     ecs::{change_detection::ResMut, system::Commands},
     math::primitives::Circle,
     render::mesh::{Mesh, Mesh2d},
@@ -11,9 +10,12 @@ use bevy::{
     DefaultPlugins,
 };
 
+mod camera;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(camera::CameraPlugin)
         .add_systems(Startup, setup)
         .run();
 }
@@ -25,8 +27,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    commands.spawn(Camera2d);
-
     let shapes = [
         meshes.add(Circle::new(50.0)),
         meshes.add(Circle::new(50.0)),
