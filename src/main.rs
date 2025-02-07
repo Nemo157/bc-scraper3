@@ -3,7 +3,10 @@ use bevy::{
     asset::Assets,
     color::Color,
     ecs::{change_detection::ResMut, system::Commands},
-    math::primitives::Circle,
+    math::{
+        primitives::{Circle, Rectangle},
+        Vec2,
+    },
     render::mesh::{Mesh, Mesh2d},
     sprite::{ColorMaterial, MeshMaterial2d},
     transform::components::Transform,
@@ -11,43 +14,104 @@ use bevy::{
 };
 
 mod camera;
+mod sim;
+
+use crate::sim::{Acceleration, Position, Relationship, Velocity};
+use rand::{
+    distr::{Distribution, Uniform},
+    seq::IndexedRandom,
+};
+use rand_distr::Poisson;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(camera::CameraPlugin)
+        .add_plugins(sim::SimPlugin)
         .add_systems(Startup, setup)
         .run();
 }
-
-const X_EXTENT: f32 = 900.;
 
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let shapes = [
-        meshes.add(Circle::new(50.0)),
-        meshes.add(Circle::new(50.0)),
-        meshes.add(Circle::new(50.0)),
-        meshes.add(Circle::new(50.0)),
-        meshes.add(Circle::new(50.0)),
-        meshes.add(Circle::new(50.0)),
-    ];
-    let num_shapes = shapes.len();
+    let circle = meshes.add(Circle::new(5.0));
+    let square = meshes.add(Rectangle::new(5.0, 5.0));
+    let album_mat = materials.add(Color::hsl(0., 0.95, 0.7));
+    let user_mat = materials.add(Color::hsl(180., 0.95, 0.7));
 
-    for (i, shape) in shapes.into_iter().enumerate() {
-        let color = Color::hsl(360. * i as f32 / num_shapes as f32, 0.95, 0.7);
+    let mut rng = rand::rng();
 
-        commands.spawn((
-            Mesh2d(shape),
-            MeshMaterial2d(materials.add(color)),
-            Transform::from_xyz(
-                -X_EXTENT / 2. + i as f32 / (num_shapes - 1) as f32 * X_EXTENT,
-                0.0,
-                0.0,
-            ),
-        ));
+    let positions = Uniform::new(200.0, 400.0).unwrap();
+    let velocities = Uniform::new(-10.0, 10.0).unwrap();
+
+    let mut albums = Vec::new();
+    for _ in 0..100 {
+        let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
+        albums.push(
+            commands
+                .spawn((
+                    Mesh2d(circle.clone()),
+                    MeshMaterial2d(album_mat.clone()),
+                    Transform::from_translation(position.extend(0.0)),
+                    Position(position),
+                    Velocity(Vec2::new(
+                        velocities.sample(&mut rng),
+                        velocities.sample(&mut rng),
+                    )),
+                    Acceleration(Vec2::ZERO),
+                ))
+                .id(),
+        );
+    }
+
+    let mut users = Vec::new();
+    for _ in 0..5 {
+        let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
+        users.push(
+            commands
+                .spawn((
+                    Mesh2d(square.clone()),
+                    MeshMaterial2d(user_mat.clone()),
+                    Transform::from_translation(position.extend(0.0)),
+                    Position(position),
+                    Velocity(Vec2::new(
+                        velocities.sample(&mut rng),
+                        velocities.sample(&mut rng),
+                    )),
+                    Acceleration(Vec2::ZERO),
+                ))
+                .id(),
+        );
+    }
+
+    let mut linked_albums = Vec::new();
+
+    for from in &users {
+        let count: f64 = Poisson::new(20.0).unwrap().sample(&mut rng);
+        for to in albums.drain(..(count as usize).min(albums.len())) {
+            linked_albums.push(to);
+            commands.spawn((Relationship { from: *from, to },));
+        }
+    }
+
+    for from in &users {
+        let count: f64 = Poisson::new(3.0).unwrap().sample(&mut rng);
+        for to in linked_albums.choose_multiple(&mut rng, count as usize) {
+            commands.spawn((Relationship {
+                from: *from,
+                to: *to,
+            },));
+        }
+    }
+
+    for from in &albums {
+        let to = users.choose(&mut rng).unwrap();
+        commands.spawn((Relationship {
+            from: *from,
+            to: *to,
+        },));
     }
 }
