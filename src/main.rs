@@ -9,6 +9,7 @@ use bevy::{
     },
     render::mesh::{Mesh, Mesh2d},
     sprite::{ColorMaterial, MeshMaterial2d},
+    time::{Fixed, Time},
     transform::components::Transform,
     DefaultPlugins,
 };
@@ -25,6 +26,7 @@ use rand_distr::Poisson;
 
 fn main() {
     App::new()
+        .insert_resource(Time::<Fixed>::from_hz(100.0))
         .add_plugins(DefaultPlugins)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(sim::SimPlugin)
@@ -39,8 +41,10 @@ fn setup(
 ) {
     let circle = meshes.add(Circle::new(5.0));
     let square = meshes.add(Rectangle::new(5.0, 5.0));
+    let unit = meshes.add(Rectangle::new(1.0, 1.0));
     let album_mat = materials.add(Color::hsl(0., 0.95, 0.7));
     let user_mat = materials.add(Color::hsl(180., 0.95, 0.7));
+    let link_mat = materials.add(Color::hsl(90., 0.95, 0.7));
 
     let mut rng = rand::rng();
 
@@ -93,25 +97,40 @@ fn setup(
         let count: f64 = Poisson::new(20.0).unwrap().sample(&mut rng);
         for to in albums.drain(..(count as usize).min(albums.len())) {
             linked_albums.push(to);
-            commands.spawn((Relationship { from: *from, to },));
+            commands.spawn((
+                Relationship { from: *from, to },
+                Mesh2d(unit.clone()),
+                MeshMaterial2d(link_mat.clone()),
+                Transform::IDENTITY,
+            ));
         }
     }
 
     for from in &users {
-        let count: f64 = Poisson::new(3.0).unwrap().sample(&mut rng);
+        let count: f64 = Poisson::new(6.0).unwrap().sample(&mut rng);
         for to in linked_albums.choose_multiple(&mut rng, count as usize) {
-            commands.spawn((Relationship {
-                from: *from,
-                to: *to,
-            },));
+            commands.spawn((
+                Relationship {
+                    from: *from,
+                    to: *to,
+                },
+                Mesh2d(unit.clone()),
+                MeshMaterial2d(link_mat.clone()),
+                Transform::IDENTITY,
+            ));
         }
     }
 
     for from in &albums {
         let to = users.choose(&mut rng).unwrap();
-        commands.spawn((Relationship {
-            from: *from,
-            to: *to,
-        },));
+        commands.spawn((
+            Relationship {
+                from: *from,
+                to: *to,
+            },
+            Mesh2d(unit.clone()),
+            MeshMaterial2d(link_mat.clone()),
+            Transform::IDENTITY,
+        ));
     }
 }
