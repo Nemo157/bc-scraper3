@@ -69,15 +69,21 @@ fn update_hover_over(
     trigger: Trigger<Pointer<Over>>,
     urls: Query<&Url>,
     mut span: Single<&mut Text, With<HoverDetails>>,
+    mut commands: Commands,
 ) {
     if let Ok(Url(url)) = urls.get(trigger.entity()) {
         ***span = url.clone()
     }
+    commands.entity(trigger.entity()).insert(crate::sim::Pinned);
 }
 
 fn update_hover_out(
-    _trigger: Trigger<Pointer<Out>>,
+    trigger: Trigger<Pointer<Out>>,
     mut span: Single<&mut Text, With<HoverDetails>>,
+    mut commands: Commands,
 ) {
     ***span = String::new();
+    commands
+        .entity(trigger.entity())
+        .remove::<crate::sim::Pinned>();
 }
