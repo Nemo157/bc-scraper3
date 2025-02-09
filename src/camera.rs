@@ -4,7 +4,7 @@ use bevy::{
     ecs::{
         change_detection::{Res, ResMut},
         query::With,
-        system::{Commands, Resource, Single},
+        system::{Commands, Query, Resource, Single},
     },
     input::{
         mouse::{AccumulatedMouseScroll, MouseButton, MouseScrollUnit},
@@ -55,7 +55,12 @@ fn drag(
     button: Res<ButtonInput<MouseButton>>,
     cursor: Res<Cursor>,
     mut transform: Single<&mut Transform, With<Camera>>,
+    dragged: Query<(), With<crate::ui::Dragged>>,
 ) {
+    if !dragged.is_empty() {
+        return;
+    }
+
     if button.pressed(MouseButton::Left) && !button.just_pressed(MouseButton::Left) {
         let mut delta = cursor.delta * transform.scale.x;
         delta.y *= -1.0;

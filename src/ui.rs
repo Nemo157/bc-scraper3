@@ -2,31 +2,38 @@ use bevy::{
     app::{App, Plugin, Startup},
     color::Color,
     ecs::{
-        component::Component,
+        component::{Component, ComponentId},
+        entity::Entity,
         observer::Trigger,
         query::With,
         system::{Commands, Query, Single},
+        world::DeferredWorld,
     },
     hierarchy::{BuildChildren, ChildBuild},
     picking::{
-        events::{Out, Over, Pointer},
+        events::{Down, Drag, Out, Over, Pointer, Up},
         PickingBehavior,
     },
+    render::camera::Camera,
     text::TextFont,
+    transform::components::Transform,
     ui::widget::{Label, Text},
     ui::{AlignItems, AlignSelf, BackgroundColor, FlexDirection, JustifyContent, Node, Val},
     utils::default,
 };
 
-use crate::data::Url;
+use crate::{data::Url, sim::Pinned};
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
-        app.add_observer(update_hover_over);
-        app.add_observer(update_hover_out);
+        app.add_observer(pointer_down);
+        app.add_observer(pointer_drag);
+        app.add_observer(pointer_up);
+        app.add_observer(pointer_over);
+        app.add_observer(pointer_out);
     }
 }
 
@@ -65,7 +72,37 @@ fn setup(mut commands: Commands) {
         });
 }
 
-fn update_hover_over(
+#[derive(Default, Component)]
+#[require(Pinned)]
+#[component(on_add = pin, on_remove = unpin)]
+pub struct Dragged;
+
+#[derive(Default, Component)]
+#[require(Pinned)]
+#[component(on_add = pin, on_remove = unpin)]
+struct Hovered;
+
+fn pointer_down(trigger: Trigger<Pointer<Down>>, mut commands: Commands) {
+    commands.entity(trigger.entity()).insert_if_new(Dragged);
+}
+
+fn pointer_drag(
+    trigger: Trigger<Pointer<Drag>>,
+    camera_transform: Single<&mut Transform, With<Camera>>,
+    mut positions: Query<&mut crate::sim::Position, With<Dragged>>,
+) {
+    if let Ok(mut position) = positions.get_mut(trigger.entity()) {
+        let mut delta = trigger.delta * camera_transform.scale.x;
+        delta.y *= -1.0;
+        position.0 += delta;
+    }
+}
+
+fn pointer_up(trigger: Trigger<Pointer<Up>>, mut commands: Commands) {
+    commands.entity(trigger.entity()).remove::<Dragged>();
+}
+
+fn pointer_over(
     trigger: Trigger<Pointer<Over>>,
     urls: Query<&Url>,
     mut span: Single<&mut Text, With<HoverDetails>>,
@@ -74,16 +111,26 @@ fn update_hover_over(
     if let Ok(Url(url)) = urls.get(trigger.entity()) {
         ***span = url.clone()
     }
-    commands.entity(trigger.entity()).insert(crate::sim::Pinned);
+    commands.entity(trigger.entity()).insert_if_new(Hovered);
 }
 
-fn update_hover_out(
+fn pointer_out(
     trigger: Trigger<Pointer<Out>>,
     mut span: Single<&mut Text, With<HoverDetails>>,
     mut commands: Commands,
 ) {
     ***span = String::new();
-    commands
-        .entity(trigger.entity())
-        .remove::<crate::sim::Pinned>();
+    commands.entity(trigger.entity()).remove::<Hovered>();
+}
+
+fn pin(mut world: DeferredWorld, entity: Entity, _id: ComponentId) {
+    if let Some(mut pinned) = world.get_mut::<Pinned>(entity) {
+        pinned.count += 1;
+    }
+}
+
+fn unpin(mut world: DeferredWorld, entity: Entity, _id: ComponentId) {
+    if let Some(mut pinned) = world.get_mut::<Pinned>(entity) {
+        pinned.count -= 1;
+    }
 }

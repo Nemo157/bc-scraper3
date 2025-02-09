@@ -22,7 +22,9 @@ pub struct Velocity(pub Vec2);
 pub struct Acceleration(pub Vec2);
 
 #[derive(Default, Component)]
-pub struct Pinned;
+pub struct Pinned {
+    pub count: u32,
+}
 
 #[derive(Component)]
 pub struct Relationship {
@@ -80,20 +82,24 @@ fn update_relationship_transforms(
 }
 
 fn update_positions(
-    mut query: Query<(&mut Position, &Velocity), Without<Pinned>>,
+    mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>,
     time: Res<Time>,
 ) {
-    for (mut position, velocity) in &mut query {
-        position.0 = position.0 + velocity.0 * time.delta().as_secs_f32();
+    for (mut position, velocity, pinned) in &mut query {
+        if pinned.map_or(0, |p| p.count) == 0 {
+            position.0 = position.0 + velocity.0 * time.delta().as_secs_f32();
+        }
     }
 }
 
 fn update_velocities(
-    mut query: Query<(&mut Velocity, &Acceleration), Without<Pinned>>,
+    mut query: Query<(&mut Velocity, &Acceleration, Option<&Pinned>)>,
     time: Res<Time>,
 ) {
-    for (mut velocity, acceleration) in &mut query {
-        velocity.0 = velocity.0 * 0.7 + acceleration.0 * time.delta().as_secs_f32();
+    for (mut velocity, acceleration, pinned) in &mut query {
+        if pinned.map_or(0, |p| p.count) == 0 {
+            velocity.0 = velocity.0 * 0.7 + acceleration.0 * time.delta().as_secs_f32();
+        }
     }
 }
 
