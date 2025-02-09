@@ -46,6 +46,7 @@
           udev
           wayland
           wayland-protocols
+          openssl
         ];
 
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [

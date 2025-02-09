@@ -1,151 +1,194 @@
 use bevy::{
-    app::{App, Startup},
+    app::{App, FixedUpdate, PluginGroup, Startup},
     asset::Assets,
-    color::Color,
-    ecs::{change_detection::ResMut, system::Commands},
-    math::{
-        primitives::{Circle, Rectangle},
-        Vec2,
+    ecs::{
+        change_detection::ResMut,
+        entity::Entity,
+        system::{Commands, Query, Res, Resource},
     },
-    picking::{mesh_picking::MeshPickingPlugin, PickingBehavior},
-    render::mesh::{Mesh, Mesh2d},
-    sprite::{ColorMaterial, MeshMaterial2d},
+    picking::mesh_picking::MeshPickingPlugin,
+    render::mesh::Mesh,
+    sprite::ColorMaterial,
     time::{Fixed, Time},
-    transform::components::Transform,
+    utils::default,
     DefaultPlugins,
 };
 
+use clap::Parser;
+
+use std::collections::{hash_map::Entry, HashMap};
+
+mod background;
 mod camera;
 mod data;
 mod sim;
 mod ui;
 
 use crate::{
-    data::Url,
-    sim::{Acceleration, Position, Relationship, Velocity},
+    background::{Request, Response},
+    data::{AlbumId, EntityData, UserId},
+    sim::{Position, Relationship},
 };
-use rand::{
-    distr::{Distribution, Uniform},
-    seq::IndexedRandom,
-};
-use rand_distr::Poisson;
 
-fn main() {
+#[derive(Parser, Debug, Resource)]
+#[command(version)]
+struct Args {
+    #[arg(long("user"), value_name("username"))]
+    users: Vec<String>,
+    #[arg(long("album"), value_name("url"))]
+    albums: Vec<String>,
+    #[arg(long("artist"), value_name("url"))]
+    artists: Vec<String>,
+    #[arg(long, value_names(["albums", "users"]), num_args(2))]
+    random: Vec<u64>,
+}
+
+#[culpa::try_fn]
+fn main() -> eyre::Result<()> {
+    let args = Args::parse();
+
+    color_eyre::install()?;
+
     App::new()
-        .insert_resource(Time::<Fixed>::from_hz(100.0))
+        .insert_resource(Time::<Fixed>::from_hz(20.0))
+        .insert_resource(args)
+        .insert_resource(background::Thread::spawn()?)
+        .insert_resource(KnownEntities::default())
         .add_plugins((
-            DefaultPlugins,
+            DefaultPlugins.set(bevy::log::LogPlugin {
+                custom_layer: |_| Some(Box::new(tracing_error::ErrorLayer::default())),
+                ..default()
+            }),
             MeshPickingPlugin,
             camera::CameraPlugin,
             sim::SimPlugin,
             ui::UiPlugin,
         ))
         .add_systems(Startup, setup)
+        .add_systems(FixedUpdate, receive)
         .run();
 }
 
 fn setup(
-    mut commands: Commands,
+    commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    args: Res<Args>,
+    scraper: Res<background::Thread>,
 ) {
-    let circle = meshes.add(Circle::new(5.0));
-    let square = meshes.add(Rectangle::new(5.0, 5.0));
-    let unit = meshes.add(Rectangle::new(1.0, 1.0));
-    let album_mat = materials.add(Color::hsl(0., 0.95, 0.7));
-    let user_mat = materials.add(Color::hsl(180., 0.95, 0.7));
-    let link_mat = materials.add(Color::hsl(90., 0.95, 0.7));
+    data::init_meshes(&mut meshes, &mut materials);
 
-    let mut rng = rand::rng();
-
-    let positions = Uniform::new(200.0, 400.0).unwrap();
-    let velocities = Uniform::new(-10.0, 10.0).unwrap();
-
-    let mut albums = Vec::new();
-    for i in 0..100 {
-        let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
-        albums.push(
-            commands
-                .spawn((
-                    Mesh2d(circle.clone()),
-                    MeshMaterial2d(album_mat.clone()),
-                    Transform::from_translation(position.extend(0.0)),
-                    Position(position),
-                    Velocity(Vec2::new(
-                        velocities.sample(&mut rng),
-                        velocities.sample(&mut rng),
-                    )),
-                    Acceleration(Vec2::ZERO),
-                    Url(format!("rand:album:{i}")),
-                ))
-                .id(),
-        );
+    for url in &args.albums {
+        scraper
+            .send(background::Request::Album { url: url.clone() })
+            .unwrap();
     }
 
-    let mut users = Vec::new();
-    for i in 0..5 {
-        let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
-        users.push(
-            commands
-                .spawn((
-                    Mesh2d(square.clone()),
-                    MeshMaterial2d(user_mat.clone()),
-                    Transform::from_translation(position.extend(0.0)),
-                    Position(position),
-                    Velocity(Vec2::new(
-                        velocities.sample(&mut rng),
-                        velocities.sample(&mut rng),
-                    )),
-                    Acceleration(Vec2::ZERO),
-                    Url(format!("rand:user:{i}")),
-                ))
-                .id(),
-        );
+    for username in &args.users {
+        scraper
+            .send(background::Request::User {
+                url: format!("https://bandcamp.com/{username}"),
+            })
+            .unwrap();
     }
 
-    let mut linked_albums = Vec::new();
+    for url in &args.artists {
+        scraper
+            .send(background::Request::Artist { url: url.clone() })
+            .unwrap();
+    }
 
-    for from in &users {
-        let count: f64 = Poisson::new(20.0).unwrap().sample(&mut rng);
-        for to in albums.drain(..(count as usize).min(albums.len())) {
-            linked_albums.push(to);
-            commands.spawn((
-                Relationship { from: *from, to },
-                Mesh2d(unit.clone()),
-                MeshMaterial2d(link_mat.clone()),
-                Transform::IDENTITY,
-                PickingBehavior::IGNORE,
-            ));
+    if let [num_albums, num_users] = args.random[..] {
+        data::create_random(commands, num_albums, num_users);
+    }
+}
+
+#[derive(Resource, Default)]
+struct KnownEntities {
+    users: HashMap<UserId, Entity>,
+    albums: HashMap<AlbumId, Entity>,
+    relationships: HashMap<Relationship, Entity>,
+}
+
+fn receive(
+    mut commands: Commands,
+    scraper: Res<background::Thread>,
+    mut known: ResMut<KnownEntities>,
+    positions: Query<&Position>,
+) {
+    if let Some(response) = scraper.try_recv().unwrap() {
+        match response {
+            Response::User(_user) => {
+                // TODO: mark as scraped
+            }
+            Response::Album(_album) => {
+                // TODO: mark as scraped
+            }
+            Response::Fans(album, users) => {
+                let (album, position) = match known.albums.entry(album.id) {
+                    Entry::Occupied(entry) => {
+                        let album = *entry.get();
+                        let position = *positions.get(album).unwrap();
+                        (album, position)
+                    }
+                    Entry::Vacant(entry) => {
+                        let bundle = EntityData::Album(album).at_random_location();
+                        let position = bundle.motion.position;
+                        let album = commands.spawn(bundle).id();
+                        entry.insert(album);
+                        (album, position)
+                    }
+                };
+                for user in users {
+                    let user = *known.users.entry(user.id).or_insert_with(|| {
+                        commands
+                            .spawn(EntityData::User(user).at_random_location_near(position))
+                            .id()
+                    });
+                    let relationship = Relationship {
+                        from: user,
+                        to: album,
+                    };
+                    known
+                        .relationships
+                        .entry(relationship)
+                        .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                }
+            }
+            Response::Collection(user, albums) => {
+                let (user, position) = match known.users.entry(user.id) {
+                    Entry::Occupied(entry) => {
+                        let user = *entry.get();
+                        let position = *positions.get(user).unwrap();
+                        (user, position)
+                    }
+                    Entry::Vacant(entry) => {
+                        let bundle = EntityData::User(user).at_random_location();
+                        let position = bundle.motion.position;
+                        let user = commands.spawn(bundle).id();
+                        entry.insert(user);
+                        (user, position)
+                    }
+                };
+                for album in albums {
+                    let album = *known.albums.entry(album.id).or_insert_with(|| {
+                        commands
+                            .spawn(EntityData::Album(album).at_random_location_near(position))
+                            .id()
+                    });
+                    let relationship = Relationship {
+                        from: user,
+                        to: album,
+                    };
+                    known
+                        .relationships
+                        .entry(relationship)
+                        .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                }
+            }
+            Response::Release(url) => {
+                scraper.send(Request::Album { url }).unwrap();
+            }
         }
-    }
-
-    for from in &users {
-        let count: f64 = Poisson::new(6.0).unwrap().sample(&mut rng);
-        for to in linked_albums.choose_multiple(&mut rng, count as usize) {
-            commands.spawn((
-                Relationship {
-                    from: *from,
-                    to: *to,
-                },
-                Mesh2d(unit.clone()),
-                MeshMaterial2d(link_mat.clone()),
-                Transform::IDENTITY,
-                PickingBehavior::IGNORE,
-            ));
-        }
-    }
-
-    for from in &albums {
-        let to = users.choose(&mut rng).unwrap();
-        commands.spawn((
-            Relationship {
-                from: *from,
-                to: *to,
-            },
-            Mesh2d(unit.clone()),
-            MeshMaterial2d(link_mat.clone()),
-            Transform::IDENTITY,
-            PickingBehavior::IGNORE,
-        ));
     }
 }

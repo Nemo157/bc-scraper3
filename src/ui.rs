@@ -22,7 +22,7 @@ use bevy::{
     utils::default,
 };
 
-use crate::{data::Url, sim::Pinned};
+use crate::{data::EntityData, sim::Pinned};
 
 pub struct UiPlugin;
 
@@ -104,12 +104,12 @@ fn pointer_up(trigger: Trigger<Pointer<Up>>, mut commands: Commands) {
 
 fn pointer_over(
     trigger: Trigger<Pointer<Over>>,
-    urls: Query<&Url>,
+    data: Query<&EntityData>,
     mut span: Single<&mut Text, With<HoverDetails>>,
     mut commands: Commands,
 ) {
-    if let Ok(Url(url)) = urls.get(trigger.entity()) {
-        ***span = url.clone()
+    if let Ok(data) = data.get(trigger.entity()) {
+        ***span = data.url().to_owned();
     }
     commands.entity(trigger.entity()).insert_if_new(Hovered);
 }

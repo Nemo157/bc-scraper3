@@ -1,6 +1,7 @@
 use bevy::{
     app::{App, FixedUpdate, Plugin, Update},
     ecs::{
+        bundle::Bundle,
         component::Component,
         entity::Entity,
         query::Without,
@@ -12,7 +13,9 @@ use bevy::{
     transform::components::Transform,
 };
 
-#[derive(Default, Component)]
+use rand::distr::{Distribution, Uniform};
+
+#[derive(Default, Component, Copy, Clone)]
 pub struct Position(pub Vec2);
 
 #[derive(Default, Component)]
@@ -26,7 +29,50 @@ pub struct Pinned {
     pub count: u32,
 }
 
-#[derive(Component)]
+#[derive(Default, Bundle)]
+pub struct MotionBundle {
+    pub transform: Transform,
+    pub position: Position,
+    pub velocity: Velocity,
+    pub acceleration: Acceleration,
+}
+
+impl MotionBundle {
+    pub fn random() -> Self {
+        let mut rng = rand::rng();
+        let positions = Uniform::new(-300.0, 300.0).unwrap();
+        let velocities = Uniform::new(-10.0, 10.0).unwrap();
+
+        let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
+        let velocity = Vec2::new(velocities.sample(&mut rng), velocities.sample(&mut rng));
+
+        Self {
+            transform: Transform::from_translation(position.extend(0.0)),
+            position: Position(position),
+            velocity: Velocity(velocity),
+            acceleration: Acceleration(Vec2::ZERO),
+        }
+    }
+
+    pub fn random_near(position: Position) -> Self {
+        let mut rng = rand::rng();
+        let positions = Uniform::new(-100.0, 100.0).unwrap();
+        let velocities = Uniform::new(-10.0, 10.0).unwrap();
+
+        let position =
+            position.0 + Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
+        let velocity = Vec2::new(velocities.sample(&mut rng), velocities.sample(&mut rng));
+
+        Self {
+            transform: Transform::from_translation(position.extend(0.0)),
+            position: Position(position),
+            velocity: Velocity(velocity),
+            acceleration: Acceleration(Vec2::ZERO),
+        }
+    }
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Relationship {
     pub from: Entity,
     pub to: Entity,

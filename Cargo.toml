@@ -5,5 +5,20 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.15.2", features = ["dynamic_linking", "wayland"] }
+chrono = "0.4.39"
+clap = { version = "4.5.28", features = ["derive"] }
+color-eyre.version = "0.6.3"
+crossbeam = "0.8.4"
+culpa = "1.0.2"
+eyre = "0.6.12"
 rand = "0.9.0"
 rand_distr = "0.5.0"
+reqwest = { version = "0.12.12", features = ["blocking", "json"] }
+rusqlite = { version = "0.33.0", features = ["chrono", "url", "bundled", "serde_json"] }
+scraper = "0.22.0"
+serde = "1.0.217"
+serde_json = "1.0.138"
+strum = { version = "0.27.0", features = ["derive"] }
+tracing = "0.1.41"
+tracing-error = "0.2.1"
+url = "2.5.4"
