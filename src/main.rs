@@ -7,6 +7,7 @@ use bevy::{
         primitives::{Circle, Rectangle},
         Vec2,
     },
+    picking::{mesh_picking::MeshPickingPlugin, PickingBehavior},
     render::mesh::{Mesh, Mesh2d},
     sprite::{ColorMaterial, MeshMaterial2d},
     time::{Fixed, Time},
@@ -15,9 +16,14 @@ use bevy::{
 };
 
 mod camera;
+mod data;
 mod sim;
+mod ui;
 
-use crate::sim::{Acceleration, Position, Relationship, Velocity};
+use crate::{
+    data::Url,
+    sim::{Acceleration, Position, Relationship, Velocity},
+};
 use rand::{
     distr::{Distribution, Uniform},
     seq::IndexedRandom,
@@ -27,9 +33,13 @@ use rand_distr::Poisson;
 fn main() {
     App::new()
         .insert_resource(Time::<Fixed>::from_hz(100.0))
-        .add_plugins(DefaultPlugins)
-        .add_plugins(camera::CameraPlugin)
-        .add_plugins(sim::SimPlugin)
+        .add_plugins((
+            DefaultPlugins,
+            MeshPickingPlugin,
+            camera::CameraPlugin,
+            sim::SimPlugin,
+            ui::UiPlugin,
+        ))
         .add_systems(Startup, setup)
         .run();
 }
@@ -52,7 +62,7 @@ fn setup(
     let velocities = Uniform::new(-10.0, 10.0).unwrap();
 
     let mut albums = Vec::new();
-    for _ in 0..100 {
+    for i in 0..100 {
         let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
         albums.push(
             commands
@@ -66,13 +76,14 @@ fn setup(
                         velocities.sample(&mut rng),
                     )),
                     Acceleration(Vec2::ZERO),
+                    Url(format!("rand:album:{i}")),
                 ))
                 .id(),
         );
     }
 
     let mut users = Vec::new();
-    for _ in 0..5 {
+    for i in 0..5 {
         let position = Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
         users.push(
             commands
@@ -86,6 +97,7 @@ fn setup(
                         velocities.sample(&mut rng),
                     )),
                     Acceleration(Vec2::ZERO),
+                    Url(format!("rand:user:{i}")),
                 ))
                 .id(),
         );
@@ -102,6 +114,7 @@ fn setup(
                 Mesh2d(unit.clone()),
                 MeshMaterial2d(link_mat.clone()),
                 Transform::IDENTITY,
+                PickingBehavior::IGNORE,
             ));
         }
     }
@@ -117,6 +130,7 @@ fn setup(
                 Mesh2d(unit.clone()),
                 MeshMaterial2d(link_mat.clone()),
                 Transform::IDENTITY,
+                PickingBehavior::IGNORE,
             ));
         }
     }
@@ -131,6 +145,7 @@ fn setup(
             Mesh2d(unit.clone()),
             MeshMaterial2d(link_mat.clone()),
             Transform::IDENTITY,
+            PickingBehavior::IGNORE,
         ));
     }
 }
