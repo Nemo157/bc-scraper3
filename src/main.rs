@@ -25,8 +25,8 @@ mod sim;
 mod ui;
 
 use crate::{
-    background::{Request, Response},
-    data::{AlbumId, EntityData, UserId},
+    background::Response,
+    data::{AlbumId, ArtistId, EntityData, UserId},
     sim::{Position, Relationship},
 };
 
@@ -39,7 +39,7 @@ struct Args {
     albums: Vec<String>,
     #[arg(long("artist"), value_name("url"))]
     artists: Vec<String>,
-    #[arg(long, value_names(["albums", "users"]), num_args(2))]
+    #[arg(long, value_names(["albums", "artists", "users"]), num_args(3))]
     random: Vec<u64>,
 }
 
@@ -98,15 +98,16 @@ fn setup(
             .unwrap();
     }
 
-    if let [num_albums, num_users] = args.random[..] {
-        data::create_random(commands, num_albums, num_users);
+    if let [albums, artists, users] = args.random[..] {
+        data::create_random(commands, albums, artists, users);
     }
 }
 
 #[derive(Resource, Default)]
 struct KnownEntities {
-    users: HashMap<UserId, Entity>,
     albums: HashMap<AlbumId, Entity>,
+    artists: HashMap<ArtistId, Entity>,
+    users: HashMap<UserId, Entity>,
     relationships: HashMap<Relationship, Entity>,
 }
 
@@ -124,6 +125,10 @@ fn receive(
             Response::Album(_album) => {
                 // TODO: mark as scraped
             }
+            Response::Artist(_arist) => {
+                // TODO: mark as scraped
+            }
+
             Response::Fans(album, users) => {
                 let (album, position) = match known.albums.entry(album.id) {
                     Entry::Occupied(entry) => {
@@ -155,6 +160,69 @@ fn receive(
                         .or_insert_with(|| commands.spawn(relationship.bundle()).id());
                 }
             }
+
+            Response::AlbumArtist(album, artist) => {
+                let (album, position) = match known.albums.entry(album.id) {
+                    Entry::Occupied(entry) => {
+                        let album = *entry.get();
+                        let position = *positions.get(album).unwrap();
+                        (album, position)
+                    }
+                    Entry::Vacant(entry) => {
+                        let bundle = EntityData::Album(album).at_random_location();
+                        let position = bundle.motion.position;
+                        let album = commands.spawn(bundle).id();
+                        entry.insert(album);
+                        (album, position)
+                    }
+                };
+                let artist = *known.artists.entry(artist.id).or_insert_with(|| {
+                    commands
+                        .spawn(EntityData::Artist(artist).at_random_location_near(position))
+                        .id()
+                });
+                let relationship = Relationship {
+                    from: artist,
+                    to: album,
+                };
+                known
+                    .relationships
+                    .entry(relationship)
+                    .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+            }
+
+            Response::Releases(artist, albums) => {
+                let (artist, position) = match known.artists.entry(artist.id) {
+                    Entry::Occupied(entry) => {
+                        let artist = *entry.get();
+                        let position = *positions.get(artist).unwrap();
+                        (artist, position)
+                    }
+                    Entry::Vacant(entry) => {
+                        let bundle = EntityData::Artist(artist).at_random_location();
+                        let position = bundle.motion.position;
+                        let artist = commands.spawn(bundle).id();
+                        entry.insert(artist);
+                        (artist, position)
+                    }
+                };
+                for album in albums {
+                    let album = *known.albums.entry(album.id).or_insert_with(|| {
+                        commands
+                            .spawn(EntityData::Album(album).at_random_location_near(position))
+                            .id()
+                    });
+                    let relationship = Relationship {
+                        from: artist,
+                        to: album,
+                    };
+                    known
+                        .relationships
+                        .entry(relationship)
+                        .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                }
+            }
+
             Response::Collection(user, albums) => {
                 let (user, position) = match known.users.entry(user.id) {
                     Entry::Occupied(entry) => {
@@ -185,9 +253,6 @@ fn receive(
                         .entry(relationship)
                         .or_insert_with(|| commands.spawn(relationship.bundle()).id());
                 }
-            }
-            Response::Release(url) => {
-                scraper.send(Request::Album { url }).unwrap();
             }
         }
     }

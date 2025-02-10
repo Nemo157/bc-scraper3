@@ -1,4 +1,4 @@
-use crate::data::{Album, AlbumId, User, UserId};
+use crate::data::{Album, AlbumId, Artist, ArtistId, User, UserId};
 use std::collections::HashMap;
 use url::Url;
 
@@ -18,13 +18,31 @@ impl JsonExt for str {
     }
 }
 
-trait DocumentExt {
+trait ScraperExt {
     fn try_select(&self, selector: &str) -> eyre::Result<Vec<scraper::ElementRef<'_>>>;
 
     fn try_select_one(&self, selector: &str) -> eyre::Result<scraper::ElementRef<'_>>;
 }
 
-impl DocumentExt for scraper::Html {
+impl ScraperExt for scraper::Html {
+    #[culpa::try_fn]
+    #[tracing::instrument(skip(self))]
+    fn try_select(&self, selector: &str) -> eyre::Result<Vec<scraper::ElementRef<'_>>> {
+        let s = scraper::Selector::parse(selector).map_err(|e| eyre::eyre!("{e:?}"))?;
+        self.select(&s).collect()
+    }
+
+    #[culpa::try_fn]
+    #[tracing::instrument(skip(self))]
+    fn try_select_one(&self, selector: &str) -> eyre::Result<scraper::ElementRef<'_>> {
+        let s = scraper::Selector::parse(selector).map_err(|e| eyre::eyre!("{e:?}"))?;
+        self.select(&s)
+            .next()
+            .ok_or_else(|| eyre::eyre!("missing element for {selector}"))?
+    }
+}
+
+impl ScraperExt for scraper::ElementRef<'_> {
     #[culpa::try_fn]
     #[tracing::instrument(skip(self))]
     fn try_select(&self, selector: &str) -> eyre::Result<Vec<scraper::ElementRef<'_>>> {
@@ -45,13 +63,22 @@ impl DocumentExt for scraper::Html {
 #[derive(Debug)]
 struct AlbumPage {
     properties: Properties,
+    data_band: DataBand,
     collectors: Collectors,
+    discography: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct Properties {
     item_type: String,
     item_id: u64,
+}
+
+#[allow(unused)]
+#[derive(Debug, serde::Deserialize)]
+struct DataBand {
+    id: u64,
+    name: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -120,17 +147,46 @@ struct Collections {
     items: Vec<CollectionItem>,
 }
 
+#[derive(Debug)]
+struct ArtistPage {
+    data_band: DataBand,
+    music_grid_items: Vec<MusicGridItem>,
+    client_items: Option<Vec<ClientItem>>,
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+struct MusicGridItem {
+    item_id: u64,
+    href: String,
+    title: String,
+    ty: String,
+}
+
+#[allow(unused)]
+#[derive(Debug, serde::Deserialize)]
+struct ClientItem {
+    art_id: u64,
+    band_id: u64,
+    id: u64,
+    page_url: String,
+    title: String,
+    #[serde(rename = "type")]
+    ty: String,
+}
+
 impl Scraper {
     pub(crate) fn new(client: super::web::Client) -> Self {
         Self { client }
     }
 
     #[culpa::try_fn]
-    #[tracing::instrument(skip(self, on_album, on_fans), fields(%url))]
+    #[tracing::instrument(skip(self, on_album, on_album_artist, on_fans), fields(%url))]
     pub(crate) fn scrape_album(
         &self,
         url: &Url,
         on_album: impl FnOnce(Album) -> eyre::Result<()>,
+        on_album_artist: impl FnOnce(Artist) -> eyre::Result<()>,
         mut on_fans: impl FnMut(Vec<User>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
         let page = self.scrape_album_page(url)?;
@@ -139,6 +195,11 @@ impl Scraper {
         on_album(Album {
             id: AlbumId(page.properties.item_id),
             url: url.to_string(),
+        })?;
+
+        on_album_artist(Artist {
+            id: ArtistId(page.data_band.id),
+            url: url.join(&page.discography)?.to_string(),
         })?;
 
         let token = page
@@ -239,22 +300,37 @@ impl Scraper {
     }
 
     #[culpa::try_fn]
-    #[tracing::instrument(skip(self, on_release))]
+    #[tracing::instrument(skip(self, on_artist, on_releases))]
     pub(crate) fn scrape_artist(
         &self,
         url: &Url,
-        mut on_release: impl FnMut(String) -> eyre::Result<()>,
+        on_artist: impl FnOnce(Artist) -> eyre::Result<()>,
+        mut on_releases: impl FnMut(Vec<Album>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
-        let data = self.client.get(url)?;
-        let document = scraper::Html::parse_document(&data);
+        let page = self.scrape_artist_page(url)?;
 
-        for a in document.try_select("li.music-grid-item a")? {
-            let href = a
-                .value()
-                .attr("href")
-                .ok_or_else(|| eyre::eyre!("missing href"))?;
-            on_release(url.join(href)?.to_string())?;
-        }
+        on_artist(Artist {
+            id: ArtistId(page.data_band.id),
+            url: url.to_string(),
+        })?;
+
+        on_releases(eyre::Result::<Vec<_>, _>::from_iter(
+            page.music_grid_items.into_iter().map(|item| {
+                eyre::Result::<_>::Ok(Album {
+                    id: AlbumId(item.item_id),
+                    url: url.join(&item.href)?.to_string(),
+                })
+            }),
+        )?)?;
+
+        on_releases(eyre::Result::<Vec<_>, _>::from_iter(
+            page.client_items.into_iter().flatten().map(|item| {
+                eyre::Result::<_>::Ok(Album {
+                    id: AlbumId(item.id),
+                    url: url.join(&item.page_url)?.to_string(),
+                })
+            }),
+        )?)?;
     }
 
     #[culpa::try_fn]
@@ -268,15 +344,83 @@ impl Scraper {
             .attr("content")
             .ok_or_else(|| eyre::eyre!("missing data-blob"))?
             .parse_json()?;
+        let data_band = document
+            .try_select_one("[data-band]")?
+            .value()
+            .attr("data-band")
+            .ok_or_else(|| eyre::eyre!("missing data-band"))?
+            .parse_json()?;
         let collectors = document
             .try_select_one("#collectors-data")?
             .value()
             .attr("data-blob")
             .ok_or_else(|| eyre::eyre!("missing data-blob"))?
             .parse_json()?;
+        let discography = document
+            .try_select_one("#discography a.link-and-title")?
+            .value()
+            .attr("href")
+            .ok_or_else(|| eyre::eyre!("missing discography href"))?
+            .to_owned();
         AlbumPage {
             properties,
+            data_band,
             collectors,
+            discography,
+        }
+    }
+
+    #[culpa::try_fn]
+    #[tracing::instrument(skip(self), fields(%url))]
+    pub(crate) fn scrape_artist_page(&self, url: &Url) -> eyre::Result<ArtistPage> {
+        let data = self.client.get(url)?;
+        let document = scraper::Html::parse_document(&data);
+
+        let data_band = document
+            .try_select_one("[data-band]")?
+            .value()
+            .attr("data-band")
+            .ok_or_else(|| eyre::eyre!("missing data-band"))?
+            .parse_json()?;
+
+        let music_grid_items = eyre::Result::<Vec<_>, _>::from_iter(
+            document
+                .try_select("li.music-grid-item")?
+                .into_iter()
+                .map(|item| {
+                    let item_id = item
+                        .value()
+                        .attr("data-item-id")
+                        .ok_or_else(|| eyre::eyre!("missing data-item-id"))?;
+                    let (ty, item_id) = item_id
+                        .split_once("-")
+                        .ok_or_else(|| eyre::eyre!("failed to parse id"))?;
+                    let title = item.try_select_one(".title")?.text().collect();
+                    let href = item
+                        .try_select_one("a")?
+                        .attr("href")
+                        .ok_or_else(|| eyre::eyre!("missing href"))?
+                        .to_owned();
+                    eyre::Result::<_>::Ok(MusicGridItem {
+                        item_id: item_id.parse()?,
+                        href,
+                        ty: ty.to_owned(),
+                        title,
+                    })
+                }),
+        )?;
+
+        let client_items = document
+            .try_select_one("#music-grid")?
+            .value()
+            .attr("data-client-items")
+            .map(|data| data.parse_json())
+            .transpose()?;
+
+        ArtistPage {
+            data_band,
+            music_grid_items,
+            client_items,
         }
     }
 

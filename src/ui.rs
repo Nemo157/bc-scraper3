@@ -126,6 +126,13 @@ fn pointer_click(
                     })
                     .unwrap();
             }
+            Ok(EntityData::Artist(artist)) => {
+                scraper
+                    .send(Request::Artist {
+                        url: artist.url.clone(),
+                    })
+                    .unwrap();
+            }
             Ok(EntityData::User(user)) => {
                 scraper
                     .send(Request::User {

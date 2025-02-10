@@ -1,4 +1,4 @@
-use crate::data::{Album, User};
+use crate::data::{Album, Artist, User};
 use crossbeam::channel::{Receiver, SendError, Sender, TryRecvError};
 use std::cell::RefCell;
 use url::Url;
@@ -17,9 +17,11 @@ pub enum Request {
 pub enum Response {
     User(User),
     Album(Album),
+    Artist(Artist),
     Fans(Album, Vec<User>),
+    AlbumArtist(Album, Artist),
     Collection(User, Vec<Album>),
-    Release(String),
+    Releases(Artist, Vec<Album>),
 }
 
 #[derive(Debug, bevy::ecs::system::Resource)]
@@ -129,6 +131,13 @@ impl Background {
                         album.replace(Some(new_album));
                         Ok(())
                     },
+                    |artist| {
+                        self.scraped.send(Response::AlbumArtist(
+                            album.borrow().clone().unwrap(),
+                            artist,
+                        ))?;
+                        Ok(())
+                    },
                     |fans| {
                         self.scraped
                             .send(Response::Fans(album.borrow().clone().unwrap(), fans))?;
@@ -139,10 +148,21 @@ impl Background {
                     .send(Response::Album(album.replace(None).take().unwrap()))?;
             }
             Request::Artist { url } => {
-                self.scraper.scrape_artist(&Url::parse(&url)?, |album| {
-                    self.scraped.send(Response::Release(album))?;
-                    Ok(())
-                })?;
+                let artist = RefCell::new(None);
+                self.scraper.scrape_artist(
+                    &Url::parse(&url)?,
+                    |new_artist| {
+                        artist.replace(Some(new_artist));
+                        Ok(())
+                    },
+                    |albums| {
+                        self.scraped
+                            .send(Response::Releases(artist.borrow().clone().unwrap(), albums))?;
+                        Ok(())
+                    },
+                )?;
+                self.scraped
+                    .send(Response::Artist(artist.replace(None).take().unwrap()))?;
             }
         }
     }
