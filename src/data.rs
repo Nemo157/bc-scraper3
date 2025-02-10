@@ -14,7 +14,7 @@ use rand_distr::Poisson;
 
 use std::sync::OnceLock;
 
-use crate::sim::{MotionBundle, Position, Relationship};
+use crate::sim::{MotionBundle, Position, Relationship, Weight};
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct AlbumId(pub u64);
@@ -73,6 +73,7 @@ pub struct RelationshipBundle {
     relationship: Relationship,
     transform: Transform,
     picking_behavior: PickingBehavior,
+    weight: Weight,
 }
 
 static ALBUM_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock::new();
@@ -134,12 +135,13 @@ impl EntityData {
 }
 
 impl Relationship {
-    pub fn bundle(self) -> RelationshipBundle {
+    pub fn bundle(self, weight: f32) -> RelationshipBundle {
         RelationshipBundle {
             render: LINK_RENDER.get().unwrap().clone(),
             relationship: self,
             transform: Transform::IDENTITY,
             picking_behavior: PickingBehavior::IGNORE,
+            weight: Weight(weight),
         }
     }
 }
@@ -190,7 +192,7 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
         let count: f64 = Poisson::new(20.0).unwrap().sample(&mut rng);
         for to in user_albums.drain(..(count as usize).min(user_albums.len())) {
             user_linked_albums.push(to);
-            commands.spawn(Relationship { from: *from, to }.bundle());
+            commands.spawn(Relationship { from: *from, to }.bundle(1.0));
         }
     }
 
@@ -202,7 +204,7 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
                     from: *from,
                     to: *to,
                 }
-                .bundle(),
+                .bundle(1.0),
             );
         }
     }
@@ -214,7 +216,7 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
                 from: *from,
                 to: *to,
             }
-            .bundle(),
+            .bundle(1.0),
         );
     }
 
@@ -223,7 +225,7 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
     for from in &artists {
         let index = rng.random_range(0..artist_albums.len());
         let to = artist_albums.swap_remove(index);
-        commands.spawn(Relationship { from: *from, to }.bundle());
+        commands.spawn(Relationship { from: *from, to, }.bundle(1.0));
     }
 
     for to in &artist_albums {
@@ -233,7 +235,7 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
                 from: *from,
                 to: *to,
             }
-            .bundle(),
+            .bundle(5.0),
         );
     }
 }

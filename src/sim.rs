@@ -88,8 +88,11 @@ pub struct Relationship {
     pub to: Entity,
 }
 
+#[derive(Component, Copy, Clone)]
+pub struct Weight(pub f32);
+
 fn increment_relation_count(mut world: DeferredWorld, entity: Entity, _id: ComponentId) {
-    let Relationship { from, to } = *world.get::<Relationship>(entity).unwrap();
+    let Relationship { from, to, .. } = *world.get::<Relationship>(entity).unwrap();
     world.get_mut::<RelationCount>(from).unwrap().count += 1;
     world.get_mut::<RelationCount>(to).unwrap().count += 1;
 }
@@ -186,10 +189,10 @@ fn repel(mut entities: Query<(&mut Acceleration, &Position)>, positions: Query<&
 }
 
 fn attract(
-    relationships: Query<&Relationship, (Without<Position>, Without<Acceleration>)>,
+    relationships: Query<(&Relationship, &Weight), (Without<Position>, Without<Acceleration>)>,
     mut entities: Query<(&mut Acceleration, &Position, &RelationCount), Without<Relationship>>,
 ) {
-    for rel in &relationships {
+    for (rel, weight) in &relationships {
         let attraction = {
             let Ok((_, from, _)) = entities.get(rel.from) else {
                 continue;
@@ -197,7 +200,7 @@ fn attract(
             let Ok((_, to, _)) = entities.get(rel.to) else {
                 continue;
             };
-            (to.0 - from.0) * 2.0
+            (to.0 - from.0) * 2.0 * weight.0
         };
         if let Ok((mut from, _, relations)) = entities.get_mut(rel.from) {
             from.0 += attraction / (relations.count as f32).sqrt();

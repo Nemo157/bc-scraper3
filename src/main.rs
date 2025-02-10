@@ -157,7 +157,7 @@ fn receive(
                     known
                         .relationships
                         .entry(relationship)
-                        .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                        .or_insert_with(|| commands.spawn(relationship.bundle(1.0)).id());
                 }
             }
 
@@ -188,7 +188,7 @@ fn receive(
                 known
                     .relationships
                     .entry(relationship)
-                    .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                    .or_insert_with(|| commands.spawn(relationship.bundle(5.0)).id());
             }
 
             Response::Releases(artist, albums) => {
@@ -219,7 +219,7 @@ fn receive(
                     known
                         .relationships
                         .entry(relationship)
-                        .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                        .or_insert_with(|| commands.spawn(relationship.bundle(5.0)).id());
                 }
             }
 
@@ -251,7 +251,7 @@ fn receive(
                     known
                         .relationships
                         .entry(relationship)
-                        .or_insert_with(|| commands.spawn(relationship.bundle()).id());
+                        .or_insert_with(|| commands.spawn(relationship.bundle(1.0)).id());
                 }
             }
         }
