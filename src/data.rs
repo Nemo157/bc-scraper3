@@ -71,13 +71,13 @@ static LINK_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock
 pub fn init_meshes(meshes: &mut Assets<Mesh>, materials: &mut Assets<ColorMaterial>) {
     ALBUM_RENDER
         .set((
-            Mesh2d(meshes.add(Circle::new(5.0))),
+            Mesh2d(meshes.add(Circle::new(10.0))),
             MeshMaterial2d(materials.add(Color::hsl(0., 0.95, 0.7))),
         ))
         .unwrap();
     USER_RENDER
         .set((
-            Mesh2d(meshes.add(Rectangle::new(5.0, 5.0))),
+            Mesh2d(meshes.add(Rectangle::new(10.0, 10.0))),
             MeshMaterial2d(materials.add(Color::hsl(180., 0.95, 0.7))),
         ))
         .unwrap();
