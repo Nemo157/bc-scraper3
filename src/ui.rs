@@ -10,6 +10,7 @@ use bevy::{
         world::DeferredWorld,
     },
     hierarchy::{BuildChildren, ChildBuild},
+    input::{keyboard::KeyCode, ButtonInput},
     picking::{
         events::{Click, Down, Drag, Out, Over, Pointer, Up},
         PickingBehavior,
@@ -22,7 +23,11 @@ use bevy::{
     utils::default,
 };
 
-use crate::{background::Request, data::EntityData, sim::Pinned};
+use crate::{
+    background::Request,
+    data::EntityData,
+    sim::{Pinned, Relationship},
+};
 
 pub struct UiPlugin;
 
@@ -118,11 +123,13 @@ fn pointer_over(
 
 fn pointer_click(
     trigger: Trigger<Pointer<Click>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     scraper: Res<crate::background::Thread>,
     data: Query<&EntityData>,
+    relationships: Query<&Relationship>,
 ) {
     if trigger.duration.as_millis() < 100 {
-        match data.get(trigger.entity()) {
+        let request = |entity| match data.get(entity) {
             Ok(EntityData::Album(album)) => {
                 scraper
                     .send(Request::Album {
@@ -145,6 +152,18 @@ fn pointer_click(
                     .unwrap();
             }
             Err(_) => {}
+        };
+
+        if keyboard.pressed(KeyCode::ShiftLeft) {
+            for rel in &relationships {
+                if rel.from == trigger.entity() {
+                    request(rel.to);
+                } else if rel.to == trigger.entity() {
+                    request(rel.from);
+                }
+            }
+        } else {
+            request(trigger.entity());
         }
     }
 }
