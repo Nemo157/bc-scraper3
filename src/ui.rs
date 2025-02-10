@@ -5,7 +5,7 @@ use bevy::{
         component::{Component, ComponentId},
         entity::Entity,
         observer::Trigger,
-        query::With,
+        query::{With, Without},
         system::{Commands, Query, Res, Single},
         world::DeferredWorld,
     },
@@ -87,12 +87,16 @@ fn pointer_down(trigger: Trigger<Pointer<Down>>, mut commands: Commands) {
 fn pointer_drag(
     trigger: Trigger<Pointer<Drag>>,
     camera_transform: Single<&mut Transform, With<Camera>>,
-    mut positions: Query<&mut crate::sim::Position, With<Dragged>>,
+    mut positions: Query<
+        (&mut crate::sim::Position, &mut Transform),
+        (With<Dragged>, Without<Camera>),
+    >,
 ) {
-    if let Ok(mut position) = positions.get_mut(trigger.entity()) {
+    if let Ok((mut position, mut transform)) = positions.get_mut(trigger.entity()) {
         let mut delta = trigger.delta * camera_transform.scale.x;
         delta.y *= -1.0;
         position.0 += delta;
+        transform.translation += delta.extend(0.0);
     }
 }
 

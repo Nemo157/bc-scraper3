@@ -98,6 +98,9 @@ fn increment_relation_count(mut world: DeferredWorld, entity: Entity, _id: Compo
     world.get_mut::<RelationCount>(to).unwrap().count += 1;
 }
 
+#[derive(Default, Resource)]
+pub struct Paused(pub bool);
+
 pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
@@ -114,6 +117,7 @@ impl Plugin for SimPlugin {
                 update_relationship_transforms,
             ),
         );
+        app.insert_resource(Paused(false));
     }
 }
 
@@ -130,15 +134,21 @@ fn lock_pinned(
 }
 
 fn update_entity_transforms(
+    paused: Res<Paused>,
     mut query: Query<(&mut Transform, &Position, &Velocity)>,
     time: Res<Time<Fixed>>,
 ) {
+    if paused.0 {
+        return;
+    };
+
     for (mut transform, position, velocity) in &mut query {
         transform.translation = (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
     }
 }
 
 fn update_relationship_transforms(
+    paused: Res<Paused>,
     relationship_parent: Single<&Visibility, With<crate::RelationshipParent>>,
     mut relationships: Query<
         (&Relationship, &mut Transform),
@@ -167,7 +177,14 @@ fn update_relationship_transforms(
     }
 }
 
-fn update_positions(mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>) {
+fn update_positions(
+    paused: Res<Paused>,
+    mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>,
+) {
+    if paused.0 {
+        return;
+    };
+
     for (mut position, velocity, pinned) in &mut query {
         if pinned.map_or(0, |p| p.count) == 0 {
             position.0 = position.0 + velocity.0;
@@ -175,7 +192,14 @@ fn update_positions(mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)
     }
 }
 
-fn update_velocities(mut query: Query<(&mut Velocity, &Acceleration, Option<&Pinned>)>) {
+fn update_velocities(
+    paused: Res<Paused>,
+    mut query: Query<(&mut Velocity, &Acceleration, Option<&Pinned>)>,
+) {
+    if paused.0 {
+        return;
+    };
+
     for (mut velocity, acceleration, pinned) in &mut query {
         if pinned.map_or(0, |p| p.count) == 0 {
             velocity.0 = (velocity.0 * 0.7 + acceleration.0 * 0.05).clamp_length_max(50.0);
@@ -183,7 +207,15 @@ fn update_velocities(mut query: Query<(&mut Velocity, &Acceleration, Option<&Pin
     }
 }
 
-fn repel(mut entities: Query<(&mut Acceleration, &Position)>, positions: Query<&Position>) {
+fn repel(
+    paused: Res<Paused>,
+    mut entities: Query<(&mut Acceleration, &Position)>,
+    positions: Query<&Position>,
+) {
+    if paused.0 {
+        return;
+    };
+
     for (mut acceleration, position) in &mut entities {
         acceleration.0 = position.0 * -0.1;
         for other_position in &positions {
@@ -195,9 +227,14 @@ fn repel(mut entities: Query<(&mut Acceleration, &Position)>, positions: Query<&
 }
 
 fn attract(
+    paused: Res<Paused>,
     relationships: Query<(&Relationship, &Weight), (Without<Position>, Without<Acceleration>)>,
     mut entities: Query<(&mut Acceleration, &Position, &RelationCount), Without<Relationship>>,
 ) {
+    if paused.0 {
+        return;
+    };
+
     for (rel, weight) in &relationships {
         let attraction = {
             let Ok((_, from, _)) = entities.get(rel.from) else {

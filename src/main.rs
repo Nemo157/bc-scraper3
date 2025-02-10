@@ -128,11 +128,14 @@ struct KnownEntities {
 fn keyinput(
     mut events: EventReader<KeyboardInput>,
     mut relationship_parent: Single<&mut Visibility, With<RelationshipParent>>,
+    mut paused: ResMut<sim::Paused>,
 ) {
     for event in events.read() {
         if event.state.is_pressed() {
             if event.logical_key == Key::Character("l".into()) {
                 relationship_parent.toggle_visible_hidden();
+            } else if event.logical_key == Key::Space {
+                paused.0 ^= true;
             }
         }
     }
