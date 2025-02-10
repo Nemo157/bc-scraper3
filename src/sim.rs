@@ -160,7 +160,7 @@ fn update_velocities(mut query: Query<(&mut Velocity, &Acceleration, Option<&Pin
 
 fn repel(mut entities: Query<(&mut Acceleration, &Position)>, positions: Query<&Position>) {
     for (mut acceleration, position) in &mut entities {
-        acceleration.0 = Vec2::ZERO;
+        acceleration.0 = position.0 * -0.1;
         for other_position in &positions {
             let dist = position.0 - other_position.0;
             let dsq = position.0.distance_squared(other_position.0).max(0.001);
