@@ -6,12 +6,12 @@ use bevy::{
         entity::Entity,
         observer::Trigger,
         query::With,
-        system::{Commands, Query, Single},
+        system::{Commands, Query, Res, Single},
         world::DeferredWorld,
     },
     hierarchy::{BuildChildren, ChildBuild},
     picking::{
-        events::{Down, Drag, Out, Over, Pointer, Up},
+        events::{Click, Down, Drag, Out, Over, Pointer, Up},
         PickingBehavior,
     },
     render::camera::Camera,
@@ -22,7 +22,7 @@ use bevy::{
     utils::default,
 };
 
-use crate::{data::EntityData, sim::Pinned};
+use crate::{background::Request, data::EntityData, sim::Pinned};
 
 pub struct UiPlugin;
 
@@ -32,6 +32,7 @@ impl Plugin for UiPlugin {
         app.add_observer(pointer_down);
         app.add_observer(pointer_drag);
         app.add_observer(pointer_up);
+        app.add_observer(pointer_click);
         app.add_observer(pointer_over);
         app.add_observer(pointer_out);
     }
@@ -109,6 +110,32 @@ fn pointer_over(
         ***span = data.url().to_owned();
     }
     commands.entity(trigger.entity()).insert_if_new(Hovered);
+}
+
+fn pointer_click(
+    trigger: Trigger<Pointer<Click>>,
+    scraper: Res<crate::background::Thread>,
+    data: Query<&EntityData>,
+) {
+    if trigger.duration.as_millis() < 100 {
+        match data.get(trigger.entity()) {
+            Ok(EntityData::Album(album)) => {
+                scraper
+                    .send(Request::Album {
+                        url: album.url.clone(),
+                    })
+                    .unwrap();
+            }
+            Ok(EntityData::User(user)) => {
+                scraper
+                    .send(Request::User {
+                        url: user.url.clone(),
+                    })
+                    .unwrap();
+            }
+            Err(_) => {}
+        }
+    }
 }
 
 fn pointer_out(
