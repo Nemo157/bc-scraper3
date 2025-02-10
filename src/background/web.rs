@@ -6,6 +6,7 @@ use rusqlite::{
 };
 use std::{
     cell::Cell,
+    path::Path,
     time::{Duration, Instant},
 };
 use url::Url;
@@ -57,8 +58,8 @@ impl DebugExt for serde_json::Value {
 
 impl Client {
     #[culpa::try_fn]
-    pub(crate) fn new() -> eyre::Result<Self> {
-        let mut cache = rusqlite::Connection::open("web-cache.sqlite")?;
+    pub(crate) fn new(cache_dir: &Path) -> eyre::Result<Self> {
+        let mut cache = rusqlite::Connection::open(cache_dir.join("web-cache.sqlite"))?;
 
         let migrations = [
             "create table pages (id integer primary key) strict",

@@ -76,10 +76,14 @@ fn main() -> eyre::Result<()> {
 
     color_eyre::install()?;
 
+    let dirs = directories::ProjectDirs::from("com", "nemo157", "bc-scraper3").unwrap();
+
+    std::fs::create_dir_all(dirs.cache_dir())?;
+
     App::new()
         .insert_resource(Time::<Fixed>::from_hz(20.0))
         .insert_resource(args)
-        .insert_resource(background::Thread::spawn()?)
+        .insert_resource(background::Thread::spawn(dirs.cache_dir())?)
         .insert_resource(KnownEntities::default())
         .add_plugins((
             DefaultPlugins.set(bevy::log::LogPlugin {

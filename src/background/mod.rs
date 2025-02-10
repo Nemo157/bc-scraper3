@@ -1,6 +1,6 @@
 use crate::data::{Album, Artist, User};
 use crossbeam::channel::{Receiver, SendError, Sender, TryRecvError};
-use std::cell::RefCell;
+use std::{cell::RefCell, path::Path};
 use url::Url;
 
 mod scrape;
@@ -33,10 +33,10 @@ pub struct Thread {
 
 impl Thread {
     #[culpa::try_fn]
-    pub fn spawn() -> eyre::Result<Self> {
+    pub fn spawn(cache_dir: &Path) -> eyre::Result<Self> {
         let (to_scrape_tx, to_scrape_rx) = crossbeam::channel::unbounded();
         let (scraped_tx, scraped_rx) = crossbeam::channel::bounded(1);
-        let background = Background::new(to_scrape_rx, scraped_tx)?;
+        let background = Background::new(cache_dir, to_scrape_rx, scraped_tx)?;
         let thread = Some(std::thread::spawn(move || background.run()));
         Thread {
             thread,
@@ -79,8 +79,12 @@ struct Background {
 
 impl Background {
     #[culpa::try_fn]
-    fn new(to_scrape: Receiver<Request>, scraped: Sender<Response>) -> eyre::Result<Self> {
-        let scraper = self::scrape::Scraper::new(self::web::Client::new()?);
+    fn new(
+        cache_dir: &Path,
+        to_scrape: Receiver<Request>,
+        scraped: Sender<Response>,
+    ) -> eyre::Result<Self> {
+        let scraper = self::scrape::Scraper::new(self::web::Client::new(cache_dir)?);
         Self {
             scraper,
             to_scrape,
