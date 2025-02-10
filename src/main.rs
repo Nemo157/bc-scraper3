@@ -3,13 +3,20 @@ use bevy::{
     asset::Assets,
     ecs::{
         change_detection::ResMut,
+        component::Component,
         entity::Entity,
-        system::{Commands, Query, Res, Resource},
+        event::EventReader,
+        query::With,
+        system::{Commands, Query, Res, Resource, Single},
     },
+    hierarchy::BuildChildren,
+    input::keyboard::{Key, KeyboardInput},
     picking::mesh_picking::MeshPickingPlugin,
     render::mesh::Mesh,
+    render::view::Visibility,
     sprite::ColorMaterial,
     time::{Fixed, Time},
+    transform::components::Transform,
     utils::default,
     DefaultPlugins,
 };
@@ -65,18 +72,25 @@ fn main() -> eyre::Result<()> {
             ui::UiPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, receive)
+        .add_systems(Update, (receive, keyinput))
         .run();
 }
 
+#[derive(Component)]
+struct RelationshipParent;
+
 fn setup(
-    commands: Commands,
+    mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     args: Res<Args>,
     scraper: Res<background::Thread>,
 ) {
     data::init_meshes(&mut meshes, &mut materials);
+
+    let relationship_parent = commands
+        .spawn((Visibility::Visible, Transform::IDENTITY, RelationshipParent))
+        .id();
 
     for url in &args.albums {
         scraper
@@ -99,7 +113,7 @@ fn setup(
     }
 
     if let [albums, artists, users] = args.random[..] {
-        data::create_random(commands, albums, artists, users);
+        data::create_random(commands, relationship_parent, albums, artists, users);
     }
 }
 
@@ -111,11 +125,25 @@ struct KnownEntities {
     relationships: HashMap<Relationship, Entity>,
 }
 
+fn keyinput(
+    mut events: EventReader<KeyboardInput>,
+    mut relationship_parent: Single<&mut Visibility, With<RelationshipParent>>,
+) {
+    for event in events.read() {
+        if event.state.is_pressed() {
+            if event.logical_key == Key::Character("l".into()) {
+                relationship_parent.toggle_visible_hidden();
+            }
+        }
+    }
+}
+
 fn receive(
     mut commands: Commands,
     scraper: Res<background::Thread>,
     mut known: ResMut<KnownEntities>,
     positions: Query<&Position>,
+    relationship_parent: Single<Entity, With<RelationshipParent>>,
 ) {
     if let Some(response) = scraper.try_recv().unwrap() {
         match response {
@@ -154,10 +182,12 @@ fn receive(
                         from: user,
                         to: album,
                     };
-                    known
-                        .relationships
-                        .entry(relationship)
-                        .or_insert_with(|| commands.spawn(relationship.bundle(1.0)).id());
+                    known.relationships.entry(relationship).or_insert_with(|| {
+                        commands
+                            .entity(*relationship_parent)
+                            .with_child(relationship.bundle(1.0))
+                            .id()
+                    });
                 }
             }
 
@@ -185,10 +215,12 @@ fn receive(
                     from: artist,
                     to: album,
                 };
-                known
-                    .relationships
-                    .entry(relationship)
-                    .or_insert_with(|| commands.spawn(relationship.bundle(5.0)).id());
+                known.relationships.entry(relationship).or_insert_with(|| {
+                    commands
+                        .entity(*relationship_parent)
+                        .with_child(relationship.bundle(3.0))
+                        .id()
+                });
             }
 
             Response::Releases(artist, albums) => {
@@ -216,10 +248,12 @@ fn receive(
                         from: artist,
                         to: album,
                     };
-                    known
-                        .relationships
-                        .entry(relationship)
-                        .or_insert_with(|| commands.spawn(relationship.bundle(5.0)).id());
+                    known.relationships.entry(relationship).or_insert_with(|| {
+                        commands
+                            .entity(*relationship_parent)
+                            .with_child(relationship.bundle(3.0))
+                            .id()
+                    });
                 }
             }
 
@@ -248,10 +282,12 @@ fn receive(
                         from: user,
                         to: album,
                     };
-                    known
-                        .relationships
-                        .entry(relationship)
-                        .or_insert_with(|| commands.spawn(relationship.bundle(1.0)).id());
+                    known.relationships.entry(relationship).or_insert_with(|| {
+                        commands
+                            .entity(*relationship_parent)
+                            .with_child(relationship.bundle(1.0))
+                            .id()
+                    });
                 }
             }
         }

@@ -1,10 +1,12 @@
 use bevy::{
     asset::Assets,
     color::Color,
-    ecs::{bundle::Bundle, component::Component, system::Commands},
+    ecs::{bundle::Bundle, component::Component, entity::Entity, system::Commands},
+    hierarchy::BuildChildren,
     math::primitives::{Annulus, Circle, Rectangle},
     picking::PickingBehavior,
     render::mesh::{Mesh, Mesh2d},
+    render::view::Visibility,
     sprite::{ColorMaterial, MeshMaterial2d},
     transform::components::Transform,
 };
@@ -74,6 +76,7 @@ pub struct RelationshipBundle {
     transform: Transform,
     picking_behavior: PickingBehavior,
     weight: Weight,
+    visibility: Visibility,
 }
 
 static ALBUM_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock::new();
@@ -142,11 +145,18 @@ impl Relationship {
             transform: Transform::IDENTITY,
             picking_behavior: PickingBehavior::IGNORE,
             weight: Weight(weight),
+            visibility: Visibility::Inherited,
         }
     }
 }
 
-pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u64) {
+pub fn create_random(
+    mut commands: Commands,
+    relationship_parent: Entity,
+    albums: u64,
+    artists: u64,
+    users: u64,
+) {
     let mut rng = rand::rng();
 
     let albums = Vec::from_iter((0..albums).map(|i| {
@@ -192,14 +202,16 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
         let count: f64 = Poisson::new(20.0).unwrap().sample(&mut rng);
         for to in user_albums.drain(..(count as usize).min(user_albums.len())) {
             user_linked_albums.push(to);
-            commands.spawn(Relationship { from: *from, to }.bundle(1.0));
+            commands
+                .entity(relationship_parent)
+                .with_child(Relationship { from: *from, to }.bundle(1.0));
         }
     }
 
     for from in &users {
         let count: f64 = Poisson::new(3.0).unwrap().sample(&mut rng);
         for to in user_linked_albums.choose_multiple(&mut rng, count as usize) {
-            commands.spawn(
+            commands.entity(relationship_parent).with_child(
                 Relationship {
                     from: *from,
                     to: *to,
@@ -211,7 +223,7 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
 
     for to in &user_albums {
         let from = users.choose(&mut rng).unwrap();
-        commands.spawn(
+        commands.entity(relationship_parent).with_child(
             Relationship {
                 from: *from,
                 to: *to,
@@ -225,12 +237,14 @@ pub fn create_random(mut commands: Commands, albums: u64, artists: u64, users: u
     for from in &artists {
         let index = rng.random_range(0..artist_albums.len());
         let to = artist_albums.swap_remove(index);
-        commands.spawn(Relationship { from: *from, to, }.bundle(1.0));
+        commands
+            .entity(relationship_parent)
+            .with_child(Relationship { from: *from, to }.bundle(1.0));
     }
 
     for to in &artist_albums {
         let from = artists.choose(&mut rng).unwrap();
-        commands.spawn(
+        commands.entity(relationship_parent).with_child(
             Relationship {
                 from: *from,
                 to: *to,

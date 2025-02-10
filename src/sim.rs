@@ -4,12 +4,13 @@ use bevy::{
         bundle::Bundle,
         component::{Component, ComponentId},
         entity::Entity,
-        query::{Changed, Without},
+        query::{Changed, With, Without},
         schedule::IntoSystemConfigs,
-        system::{Query, Res},
+        system::{Query, Res, Resource, Single},
         world::DeferredWorld,
     },
     math::{Quat, Vec2},
+    render::view::Visibility,
     time::{Fixed, Time},
     transform::components::Transform,
 };
@@ -138,6 +139,7 @@ fn update_entity_transforms(
 }
 
 fn update_relationship_transforms(
+    relationship_parent: Single<&Visibility, With<crate::RelationshipParent>>,
     mut relationships: Query<
         (&Relationship, &mut Transform),
         (Without<Position>, Without<Velocity>),
@@ -145,6 +147,10 @@ fn update_relationship_transforms(
     entities: Query<(&Position, &Velocity), Without<Relationship>>,
     time: Res<Time<Fixed>>,
 ) {
+    if *relationship_parent == Visibility::Hidden || paused.0 {
+        return;
+    }
+
     for (rel, mut transform) in &mut relationships {
         let Ok((from_pos, from_vel)) = entities.get(rel.from) else {
             continue;
