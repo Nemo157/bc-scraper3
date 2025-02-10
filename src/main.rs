@@ -1,5 +1,5 @@
 use bevy::{
-    app::{App, FixedUpdate, PluginGroup, Startup},
+    app::{App, PluginGroup, Startup, Update},
     asset::Assets,
     ecs::{
         change_detection::ResMut,
@@ -65,7 +65,7 @@ fn main() -> eyre::Result<()> {
             ui::UiPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, receive)
+        .add_systems(Update, receive)
         .run();
 }
 
