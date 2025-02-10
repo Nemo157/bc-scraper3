@@ -4,7 +4,7 @@ use bevy::{
         bundle::Bundle,
         component::{Component, ComponentId},
         entity::Entity,
-        query::Without,
+        query::{Changed, Without},
         schedule::IntoSystemConfigs,
         system::{Query, Res},
         world::DeferredWorld,
@@ -104,8 +104,24 @@ impl Plugin for SimPlugin {
         );
         app.add_systems(
             Update,
-            (update_entity_transforms, update_relationship_transforms),
+            (
+                lock_pinned,
+                update_entity_transforms,
+                update_relationship_transforms,
+            ),
         );
+    }
+}
+
+fn lock_pinned(
+    mut query: Query<(&mut Position, &mut Velocity, &Pinned), Changed<Pinned>>,
+    time: Res<Time<Fixed>>,
+) {
+    for (mut position, mut velocity, pinned) in &mut query {
+        if pinned.count > 0 {
+            position.0 += velocity.0 * time.overstep_fraction();
+            velocity.0 = Vec2::ZERO;
+        }
     }
 }
 
