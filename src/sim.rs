@@ -2,11 +2,12 @@ use bevy::{
     app::{App, FixedUpdate, Plugin, Update},
     ecs::{
         bundle::Bundle,
-        component::Component,
+        component::{Component, ComponentId},
         entity::Entity,
         query::Without,
         schedule::IntoSystemConfigs,
         system::{Query, Res},
+        world::DeferredWorld,
     },
     math::{Quat, Vec2},
     time::{Fixed, Time},
@@ -35,6 +36,7 @@ pub struct MotionBundle {
     pub position: Position,
     pub velocity: Velocity,
     pub acceleration: Acceleration,
+    relation_count: RelationCount,
 }
 
 impl MotionBundle {
@@ -51,6 +53,7 @@ impl MotionBundle {
             position: Position(position),
             velocity: Velocity(velocity),
             acceleration: Acceleration(Vec2::ZERO),
+            relation_count: RelationCount::default(),
         }
     }
 
@@ -68,14 +71,27 @@ impl MotionBundle {
             position: Position(position),
             velocity: Velocity(velocity),
             acceleration: Acceleration(Vec2::ZERO),
+            relation_count: RelationCount::default(),
         }
     }
 }
 
+#[derive(Default, Component)]
+pub struct RelationCount {
+    pub count: u32,
+}
+
 #[derive(Component, Copy, Clone, Eq, PartialEq, Hash)]
+#[component(on_add = increment_relation_count)]
 pub struct Relationship {
     pub from: Entity,
     pub to: Entity,
+}
+
+fn increment_relation_count(mut world: DeferredWorld, entity: Entity, _id: ComponentId) {
+    let Relationship { from, to } = *world.get::<Relationship>(entity).unwrap();
+    world.get_mut::<RelationCount>(from).unwrap().count += 1;
+    world.get_mut::<RelationCount>(to).unwrap().count += 1;
 }
 
 pub struct SimPlugin;
@@ -155,23 +171,23 @@ fn repel(mut entities: Query<(&mut Acceleration, &Position)>, positions: Query<&
 
 fn attract(
     relationships: Query<&Relationship, (Without<Position>, Without<Acceleration>)>,
-    mut entities: Query<(&mut Acceleration, &Position), Without<Relationship>>,
+    mut entities: Query<(&mut Acceleration, &Position, &RelationCount), Without<Relationship>>,
 ) {
     for rel in &relationships {
         let attraction = {
-            let Ok((_, from)) = entities.get(rel.from) else {
+            let Ok((_, from, _)) = entities.get(rel.from) else {
                 continue;
             };
-            let Ok((_, to)) = entities.get(rel.to) else {
+            let Ok((_, to, _)) = entities.get(rel.to) else {
                 continue;
             };
             (to.0 - from.0) * 2.0
         };
-        if let Ok((mut from, _)) = entities.get_mut(rel.from) {
-            from.0 += attraction;
+        if let Ok((mut from, _, relations)) = entities.get_mut(rel.from) {
+            from.0 += attraction / (relations.count as f32).sqrt();
         }
-        if let Ok((mut to, _)) = entities.get_mut(rel.to) {
-            to.0 -= attraction;
+        if let Ok((mut to, _, relations)) = entities.get_mut(rel.to) {
+            to.0 -= attraction / (relations.count as f32).sqrt();
         }
     }
 }
