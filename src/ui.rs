@@ -155,12 +155,19 @@ fn pointer_click(
         };
 
         if keyboard.pressed(KeyCode::ShiftLeft) {
-            for rel in &relationships {
-                if rel.from == trigger.entity() {
-                    request(rel.to);
-                } else if rel.to == trigger.entity() {
-                    request(rel.from);
-                }
+            let next_level = |entity| {
+                relationships.iter().filter_map(move |rel| {
+                    (rel.from == entity)
+                        .then_some(rel.to)
+                        .or((rel.to == entity).then_some(rel.from))
+                })
+            };
+            if keyboard.pressed(KeyCode::ControlLeft) {
+                next_level(trigger.entity())
+                    .flat_map(|entity| next_level(entity))
+                    .for_each(|entity| request(entity));
+            } else {
+                next_level(trigger.entity()).for_each(|entity| request(entity));
             }
         } else {
             request(trigger.entity());
