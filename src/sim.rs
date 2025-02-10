@@ -98,8 +98,7 @@ fn update_entity_transforms(
     time: Res<Time<Fixed>>,
 ) {
     for (mut transform, position, velocity) in &mut query {
-        transform.translation =
-            (position.0 + velocity.0 * time.overstep().as_secs_f32()).extend(0.0);
+        transform.translation = (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
     }
 }
 
@@ -115,11 +114,11 @@ fn update_relationship_transforms(
         let Ok((from_pos, from_vel)) = entities.get(rel.from) else {
             continue;
         };
-        let from_pos = from_pos.0 + from_vel.0 * time.overstep().as_secs_f32();
+        let from_pos = from_pos.0 + from_vel.0 * time.overstep_fraction();
         let Ok((to_pos, to_vel)) = entities.get(rel.to) else {
             continue;
         };
-        let to_pos = to_pos.0 + to_vel.0 * time.overstep().as_secs_f32();
+        let to_pos = to_pos.0 + to_vel.0 * time.overstep_fraction();
         let delta = to_pos - from_pos;
         transform.rotation = Quat::from_rotation_z((to_pos - from_pos).to_angle());
         transform.scale.x = delta.length();
@@ -127,25 +126,18 @@ fn update_relationship_transforms(
     }
 }
 
-fn update_positions(
-    mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>,
-    time: Res<Time>,
-) {
+fn update_positions(mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>) {
     for (mut position, velocity, pinned) in &mut query {
         if pinned.map_or(0, |p| p.count) == 0 {
-            position.0 = position.0 + velocity.0 * time.delta().as_secs_f32();
+            position.0 = position.0 + velocity.0;
         }
     }
 }
 
-fn update_velocities(
-    mut query: Query<(&mut Velocity, &Acceleration, Option<&Pinned>)>,
-    time: Res<Time>,
-) {
+fn update_velocities(mut query: Query<(&mut Velocity, &Acceleration, Option<&Pinned>)>) {
     for (mut velocity, acceleration, pinned) in &mut query {
         if pinned.map_or(0, |p| p.count) == 0 {
-            velocity.0 = (velocity.0 * 0.7 + acceleration.0 * time.delta().as_secs_f32())
-                .clamp_length_max(1000.0);
+            velocity.0 = (velocity.0 * 0.7 + acceleration.0 * 0.05).clamp_length_max(50.0);
         }
     }
 }
@@ -155,8 +147,8 @@ fn repel(mut entities: Query<(&mut Acceleration, &Position)>, positions: Query<&
         acceleration.0 = Vec2::ZERO;
         for other_position in &positions {
             let dist = position.0 - other_position.0;
-            let dsq = (dist.x * dist.x + dist.y * dist.y).max(0.001);
-            acceleration.0 += dist * 50000.0 / dsq;
+            let dsq = position.0.distance_squared(other_position.0).max(0.001);
+            acceleration.0 += dist * 1000.0 / dsq;
         }
     }
 }
@@ -173,7 +165,7 @@ fn attract(
             let Ok((_, to)) = entities.get(rel.to) else {
                 continue;
             };
-            (to.0 - from.0) * 100.0
+            (to.0 - from.0) * 2.0
         };
         if let Ok((mut from, _)) = entities.get_mut(rel.from) {
             from.0 += attraction;
