@@ -8,6 +8,7 @@ bevy = { version = "0.15.2", features = ["dynamic_linking", "wayland"] }
 chrono = "0.4.39"
 clap = { version = "4.5.28", features = ["derive"] }
 color-eyre.version = "0.6.3"
+color-print = "0.3.7"
 crossbeam = "0.8.4"
 culpa = "1.0.2"
 eyre = "0.6.12"

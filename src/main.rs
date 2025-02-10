@@ -38,7 +38,27 @@ use crate::{
 };
 
 #[derive(Parser, Debug, Resource)]
-#[command(version)]
+#[command(
+    version,
+    arg_required_else_help = true,
+    after_help = "At least one option must be passed to select initial data",
+    after_long_help = color_print::cstr!("
+At least one option must be passed to select initial data
+
+<bold><underline>Controls:</underline></bold>
+
+  <bold>Left-Click drag</bold> background to pan
+  <bold>Hover</bold> node to pin it
+  <bold>Left-Click drag</bold> node to move it
+  <bold>Scroll</bold> to zoom
+  <bold>Short-Click</bold> node to expand it
+  <bold>Shift+Short-Click</bold> node to expand its linked nodes
+  <bold>Ctrl+Shift+Short-Click</bold> node to expand its linked nodes' linked nodes
+  <bold>Space</bold> to (un)pause simulation
+  <bold>L</bold> to hide lines
+
+"),
+)]
 struct Args {
     #[arg(long("user"), value_name("username"))]
     users: Vec<String>,
