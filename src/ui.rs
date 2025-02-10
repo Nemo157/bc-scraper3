@@ -18,7 +18,7 @@ use bevy::{
     text::TextFont,
     transform::components::Transform,
     ui::widget::{Label, Text},
-    ui::{AlignItems, AlignSelf, BackgroundColor, FlexDirection, JustifyContent, Node, Val},
+    ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, Node},
     utils::default,
 };
 
@@ -42,33 +42,30 @@ struct HoverDetails;
 
 fn setup(mut commands: Commands) {
     commands
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            justify_content: JustifyContent::Start,
-            ..default()
-        })
-        .insert(PickingBehavior::IGNORE)
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Start,
+                align_items: AlignItems::Start,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.10, 0.10, 0.10, 0.98)),
+            PickingBehavior::IGNORE,
+        ))
         .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        justify_content: JustifyContent::Start,
-                        align_items: AlignItems::Start,
-                        align_self: AlignSelf::Stretch,
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.10, 0.10, 0.10, 0.98)),
-                ))
-                .with_children(|parent| {
-                    parent.spawn((
-                        Text::new("Hovered Entity"),
-                        TextFont::default().with_font_size(21.0),
-                        Label,
-                    ));
-                    parent.spawn((Text::default(), TextFont::default(), Label, HoverDetails));
-                });
+            parent.spawn((
+                Text::new("Hovered Entity"),
+                TextFont::default().with_font_size(21.0),
+                Label,
+                PickingBehavior::IGNORE,
+            ));
+            parent.spawn((
+                Text::default(),
+                TextFont::default(),
+                Label,
+                HoverDetails,
+                PickingBehavior::IGNORE,
+            ));
         });
 }
 
