@@ -144,7 +144,8 @@ fn update_velocities(
 ) {
     for (mut velocity, acceleration, pinned) in &mut query {
         if pinned.map_or(0, |p| p.count) == 0 {
-            velocity.0 = velocity.0 * 0.7 + acceleration.0 * time.delta().as_secs_f32();
+            velocity.0 = (velocity.0 * 0.7 + acceleration.0 * time.delta().as_secs_f32())
+                .clamp_length_max(1000.0);
         }
     }
 }
