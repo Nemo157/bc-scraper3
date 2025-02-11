@@ -25,7 +25,7 @@ use bevy::{
 
 use crate::{
     background::Request,
-    data::EntityData,
+    data::{EntityType, Url},
     sim::{Pinned, Relationship},
 };
 
@@ -111,12 +111,12 @@ fn pointer_up(trigger: Trigger<Pointer<Up>>, mut commands: Commands) {
 
 fn pointer_over(
     trigger: Trigger<Pointer<Over>>,
-    data: Query<&EntityData>,
+    url: Query<&Url>,
     mut span: Single<&mut Text, With<HoverDetails>>,
     mut commands: Commands,
 ) {
-    if let Ok(data) = data.get(trigger.entity()) {
-        ***span = data.url().to_owned();
+    if let Ok(url) = url.get(trigger.entity()) {
+        ***span = url.0.clone();
     }
     commands.entity(trigger.entity()).insert_if_new(Hovered);
 }
@@ -125,31 +125,19 @@ fn pointer_click(
     trigger: Trigger<Pointer<Click>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     scraper: Res<crate::background::Thread>,
-    data: Query<&EntityData>,
+    data: Query<(&Url, &EntityType)>,
     relationships: Query<&Relationship>,
 ) {
     if trigger.duration.as_millis() < 100 {
         let request = |entity| match data.get(entity) {
-            Ok(EntityData::Album(album)) => {
-                scraper
-                    .send(Request::Album {
-                        url: album.url.clone(),
-                    })
-                    .unwrap();
+            Ok((Url(url), EntityType::Album)) => {
+                scraper.send(Request::Album { url: url.clone() }).unwrap();
             }
-            Ok(EntityData::Artist(artist)) => {
-                scraper
-                    .send(Request::Artist {
-                        url: artist.url.clone(),
-                    })
-                    .unwrap();
+            Ok((Url(url), EntityType::Artist)) => {
+                scraper.send(Request::Artist { url: url.clone() }).unwrap();
             }
-            Ok(EntityData::User(user)) => {
-                scraper
-                    .send(Request::User {
-                        url: user.url.clone(),
-                    })
-                    .unwrap();
+            Ok((Url(url), EntityType::User)) => {
+                scraper.send(Request::User { url: url.clone() }).unwrap();
             }
             Err(_) => {}
         };

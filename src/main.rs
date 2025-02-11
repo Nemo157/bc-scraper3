@@ -1,6 +1,5 @@
 use bevy::{
     app::{App, PluginGroup, Startup, Update},
-    asset::Assets,
     ecs::{
         change_detection::ResMut,
         component::Component,
@@ -12,9 +11,7 @@ use bevy::{
     hierarchy::BuildChildren,
     input::keyboard::{Key, KeyboardInput},
     picking::mesh_picking::MeshPickingPlugin,
-    render::mesh::Mesh,
     render::view::Visibility,
-    sprite::ColorMaterial,
     time::{Fixed, Time},
     transform::components::Transform,
     utils::default,
@@ -28,13 +25,14 @@ use std::collections::{hash_map::Entry, HashMap};
 mod background;
 mod camera;
 mod data;
+mod render;
 mod sim;
 mod ui;
 
 use crate::{
     background::Response,
-    data::{AlbumId, ArtistId, EntityData, UserId},
-    sim::{Position, Relationship},
+    data::{AlbumId, ArtistId, UserId},
+    sim::{MotionBundle, Position, Relationship},
 };
 
 #[derive(Parser, Debug, Resource)]
@@ -94,6 +92,7 @@ fn main() -> eyre::Result<()> {
             camera::CameraPlugin,
             sim::SimPlugin,
             ui::UiPlugin,
+            render::Plugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (receive, keyinput))
@@ -103,15 +102,7 @@ fn main() -> eyre::Result<()> {
 #[derive(Component)]
 struct RelationshipParent;
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    args: Res<Args>,
-    scraper: Res<background::Thread>,
-) {
-    data::init_meshes(&mut meshes, &mut materials);
-
+fn setup(mut commands: Commands, args: Res<Args>, scraper: Res<background::Thread>) {
     let relationship_parent = commands
         .spawn((Visibility::Visible, Transform::IDENTITY, RelationshipParent))
         .id();
@@ -192,9 +183,9 @@ fn receive(
                         (album, position)
                     }
                     Entry::Vacant(entry) => {
-                        let bundle = EntityData::Album(album).at_random_location();
-                        let position = bundle.motion.position;
-                        let album = commands.spawn(bundle).id();
+                        let motion = MotionBundle::random();
+                        let position = motion.position;
+                        let album = commands.spawn((album, motion)).id();
                         entry.insert(album);
                         (album, position)
                     }
@@ -202,7 +193,7 @@ fn receive(
                 for user in users {
                     let user = *known.users.entry(user.id).or_insert_with(|| {
                         commands
-                            .spawn(EntityData::User(user).at_random_location_near(position))
+                            .spawn((user, MotionBundle::random_near(position)))
                             .id()
                     });
                     let relationship = Relationship {
@@ -226,16 +217,16 @@ fn receive(
                         (album, position)
                     }
                     Entry::Vacant(entry) => {
-                        let bundle = EntityData::Album(album).at_random_location();
-                        let position = bundle.motion.position;
-                        let album = commands.spawn(bundle).id();
+                        let motion = MotionBundle::random();
+                        let position = motion.position;
+                        let album = commands.spawn((album, motion)).id();
                         entry.insert(album);
                         (album, position)
                     }
                 };
                 let artist = *known.artists.entry(artist.id).or_insert_with(|| {
                     commands
-                        .spawn(EntityData::Artist(artist).at_random_location_near(position))
+                        .spawn((artist, MotionBundle::random_near(position)))
                         .id()
                 });
                 let relationship = Relationship {
@@ -258,9 +249,9 @@ fn receive(
                         (artist, position)
                     }
                     Entry::Vacant(entry) => {
-                        let bundle = EntityData::Artist(artist).at_random_location();
-                        let position = bundle.motion.position;
-                        let artist = commands.spawn(bundle).id();
+                        let motion = MotionBundle::random();
+                        let position = motion.position;
+                        let artist = commands.spawn((artist, motion)).id();
                         entry.insert(artist);
                         (artist, position)
                     }
@@ -268,7 +259,7 @@ fn receive(
                 for album in albums {
                     let album = *known.albums.entry(album.id).or_insert_with(|| {
                         commands
-                            .spawn(EntityData::Album(album).at_random_location_near(position))
+                            .spawn((album, MotionBundle::random_near(position)))
                             .id()
                     });
                     let relationship = Relationship {
@@ -292,9 +283,9 @@ fn receive(
                         (user, position)
                     }
                     Entry::Vacant(entry) => {
-                        let bundle = EntityData::User(user).at_random_location();
-                        let position = bundle.motion.position;
-                        let user = commands.spawn(bundle).id();
+                        let motion = MotionBundle::random();
+                        let position = motion.position;
+                        let user = commands.spawn((user, motion)).id();
                         entry.insert(user);
                         (user, position)
                     }
@@ -302,7 +293,7 @@ fn receive(
                 for album in albums {
                     let album = *known.albums.entry(album.id).or_insert_with(|| {
                         commands
-                            .spawn(EntityData::Album(album).at_random_location_near(position))
+                            .spawn((album, MotionBundle::random_near(position)))
                             .id()
                     });
                     let relationship = Relationship {

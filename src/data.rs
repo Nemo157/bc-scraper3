@@ -1,77 +1,82 @@
 use bevy::{
-    asset::Assets,
-    color::Color,
     ecs::{bundle::Bundle, component::Component, entity::Entity, system::Commands},
     hierarchy::BuildChildren,
-    math::primitives::{Annulus, Circle, Rectangle},
     picking::PickingBehavior,
-    render::mesh::{Mesh, Mesh2d},
     render::view::Visibility,
-    sprite::{ColorMaterial, MeshMaterial2d},
     transform::components::Transform,
 };
 
 use rand::{distr::Distribution, seq::IndexedRandom, Rng};
 use rand_distr::Poisson;
 
-use std::sync::OnceLock;
+use crate::sim::{MotionBundle, Relationship, Weight};
 
-use crate::sim::{MotionBundle, Position, Relationship, Weight};
-
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::Album))]
 pub struct AlbumId(pub u64);
 
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::Artist))]
 pub struct ArtistId(pub u64);
 
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::User))]
 pub struct UserId(pub u64);
 
-#[derive(Debug, Component)]
-pub enum EntityData {
-    Album(Album),
-    Artist(Artist),
-    User(User),
-}
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+pub struct Url(pub String);
 
-impl EntityData {
-    pub fn url(&self) -> &str {
-        match self {
-            Self::Album(Album { url, .. }) => url,
-            Self::Artist(Artist { url, .. }) => url,
-            Self::User(User { url, .. }) => url,
-        }
+impl From<String> for Url {
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 
-#[derive(Debug, Clone)]
+impl From<&str> for Url {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
+impl From<url::Url> for Url {
+    fn from(s: url::Url) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl From<&url::Url> for Url {
+    fn from(s: &url::Url) -> Self {
+        Self(s.to_string())
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+pub enum EntityType {
+    Album,
+    Artist,
+    User,
+}
+
+#[derive(Debug, Clone, Bundle)]
 pub struct Album {
     pub id: AlbumId,
-    pub url: String,
+    pub url: Url,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Bundle)]
 pub struct Artist {
     pub id: ArtistId,
-    pub url: String,
+    pub url: Url,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Bundle)]
 pub struct User {
     pub id: UserId,
-    pub url: String,
-}
-
-#[derive(Bundle)]
-pub struct EntityBundle {
-    render: (Mesh2d, MeshMaterial2d<ColorMaterial>),
-    pub motion: MotionBundle,
-    pub data: EntityData,
+    pub url: Url,
 }
 
 #[derive(Bundle)]
 pub struct RelationshipBundle {
-    render: (Mesh2d, MeshMaterial2d<ColorMaterial>),
     relationship: Relationship,
     transform: Transform,
     picking_behavior: PickingBehavior,
@@ -79,68 +84,9 @@ pub struct RelationshipBundle {
     visibility: Visibility,
 }
 
-static ALBUM_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock::new();
-static ARTIST_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock::new();
-static USER_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock::new();
-static LINK_RENDER: OnceLock<(Mesh2d, MeshMaterial2d<ColorMaterial>)> = OnceLock::new();
-
-pub fn init_meshes(meshes: &mut Assets<Mesh>, materials: &mut Assets<ColorMaterial>) {
-    ALBUM_RENDER
-        .set((
-            Mesh2d(meshes.add(Circle::new(10.0))),
-            MeshMaterial2d(materials.add(Color::hsl(0., 0.95, 0.7))),
-        ))
-        .unwrap();
-    ARTIST_RENDER
-        .set((
-            Mesh2d(meshes.add(Annulus::new(10.0, 6.0))),
-            MeshMaterial2d(materials.add(Color::hsl(270., 0.95, 0.7))),
-        ))
-        .unwrap();
-    USER_RENDER
-        .set((
-            Mesh2d(meshes.add(Rectangle::new(10.0, 10.0))),
-            MeshMaterial2d(materials.add(Color::hsl(180., 0.95, 0.7))),
-        ))
-        .unwrap();
-    LINK_RENDER
-        .set((
-            Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
-            MeshMaterial2d(materials.add(Color::hsl(90., 0.95, 0.7))),
-        ))
-        .unwrap();
-}
-
-impl EntityData {
-    pub fn at_location(self, motion: MotionBundle) -> EntityBundle {
-        let render = match self {
-            Self::Album(_) => ALBUM_RENDER.get(),
-            Self::Artist(_) => ARTIST_RENDER.get(),
-            Self::User(_) => USER_RENDER.get(),
-        }
-        .unwrap()
-        .clone();
-
-        EntityBundle {
-            render,
-            motion,
-            data: self,
-        }
-    }
-
-    pub fn at_random_location(self) -> EntityBundle {
-        self.at_location(MotionBundle::random())
-    }
-
-    pub fn at_random_location_near(self, position: Position) -> EntityBundle {
-        self.at_location(MotionBundle::random_near(position))
-    }
-}
-
 impl Relationship {
     pub fn bundle(self, weight: f32) -> RelationshipBundle {
         RelationshipBundle {
-            render: LINK_RENDER.get().unwrap().clone(),
             relationship: self,
             transform: Transform::IDENTITY,
             picking_behavior: PickingBehavior::IGNORE,
@@ -161,37 +107,37 @@ pub fn create_random(
 
     let albums = Vec::from_iter((0..albums).map(|i| {
         commands
-            .spawn(
-                EntityData::Album(Album {
+            .spawn((
+                Album {
                     id: AlbumId(i),
-                    url: format!("rand:album:{i}"),
-                })
-                .at_random_location(),
-            )
+                    url: format!("rand:album:{i}").into(),
+                },
+                MotionBundle::random(),
+            ))
             .id()
     }));
 
     let artists = Vec::from_iter((0..artists).map(|i| {
         commands
-            .spawn(
-                EntityData::Artist(Artist {
+            .spawn((
+                Artist {
                     id: ArtistId(i),
-                    url: format!("rand:artist:{i}"),
-                })
-                .at_random_location(),
-            )
+                    url: format!("rand:artist:{i}").into(),
+                },
+                MotionBundle::random(),
+            ))
             .id()
     }));
 
     let users = Vec::from_iter((0..users).map(|i| {
         commands
-            .spawn(
-                EntityData::User(User {
+            .spawn((
+                User {
                     id: UserId(i),
-                    url: format!("rand:user:{i}"),
-                })
-                .at_random_location(),
-            )
+                    url: format!("rand:user:{i}").into(),
+                },
+                MotionBundle::random(),
+            ))
             .id()
     }));
 

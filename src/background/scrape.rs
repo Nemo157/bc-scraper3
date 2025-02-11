@@ -194,12 +194,12 @@ impl Scraper {
         let mut more_available = page.collectors.more_thumbs_available;
         on_album(Album {
             id: AlbumId(page.properties.item_id),
-            url: url.to_string(),
+            url: url.into(),
         })?;
 
         on_album_artist(Artist {
             id: ArtistId(page.data_band.id),
-            url: url.join(&page.discography)?.to_string(),
+            url: url.join(&page.discography)?.into(),
         })?;
 
         let token = page
@@ -213,7 +213,7 @@ impl Scraper {
                 .into_iter()
                 .map(|review| User {
                     id: UserId(review.fan_id),
-                    url: format!("https://bandcamp.com/{}", review.username),
+                    url: format!("https://bandcamp.com/{}", review.username).into(),
                 })
                 .collect(),
         )?;
@@ -223,7 +223,7 @@ impl Scraper {
                 .into_iter()
                 .map(|thumb| User {
                     id: UserId(thumb.fan_id),
-                    url: format!("https://bandcamp.com/{}", thumb.username),
+                    url: format!("https://bandcamp.com/{}", thumb.username).into(),
                 })
                 .collect(),
         )?;
@@ -239,7 +239,7 @@ impl Scraper {
                         .into_iter()
                         .map(|thumb| User {
                             id: UserId(thumb.fan_id),
-                            url: format!("https://bandcamp.com/{}", thumb.username),
+                            url: format!("https://bandcamp.com/{}", thumb.username).into(),
                         })
                         .collect(),
                 )?;
@@ -259,7 +259,7 @@ impl Scraper {
 
         on_fan(User {
             id: UserId(page.fan_data.fan_id),
-            url: format!("https://bandcamp.com/{}", page.fan_data.username),
+            url: format!("https://bandcamp.com/{}", page.fan_data.username).into(),
         })?;
 
         let items = eyre::Result::<Vec<_>, _>::from_iter(
@@ -277,7 +277,7 @@ impl Scraper {
                 .into_iter()
                 .map(|item| Album {
                     id: AlbumId(item.item_id),
-                    url: item.item_url,
+                    url: item.item_url.into(),
                 })
                 .collect(),
         )?;
@@ -292,7 +292,7 @@ impl Scraper {
                     .into_iter()
                     .map(|item| Album {
                         id: AlbumId(item.item_id),
-                        url: item.item_url,
+                        url: item.item_url.into(),
                     })
                     .collect(),
             )?;
@@ -311,14 +311,14 @@ impl Scraper {
 
         on_artist(Artist {
             id: ArtistId(page.data_band.id),
-            url: url.to_string(),
+            url: url.into(),
         })?;
 
         on_releases(eyre::Result::<Vec<_>, _>::from_iter(
             page.music_grid_items.into_iter().map(|item| {
                 eyre::Result::<_>::Ok(Album {
                     id: AlbumId(item.item_id),
-                    url: url.join(&item.href)?.to_string(),
+                    url: url.join(&item.href)?.into(),
                 })
             }),
         )?)?;
@@ -327,7 +327,7 @@ impl Scraper {
             page.client_items.into_iter().flatten().map(|item| {
                 eyre::Result::<_>::Ok(Album {
                     id: AlbumId(item.id),
-                    url: url.join(&item.page_url)?.to_string(),
+                    url: url.join(&item.page_url)?.into(),
                 })
             }),
         )?)?;

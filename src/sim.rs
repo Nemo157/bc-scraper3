@@ -4,15 +4,13 @@ use bevy::{
         bundle::Bundle,
         component::{Component, ComponentId},
         entity::Entity,
-        query::{Changed, With, Without},
+        query::Changed,
         schedule::IntoSystemConfigs,
-        system::{Query, Res, Resource, Single},
+        system::{Query, Res, Resource},
         world::DeferredWorld,
     },
-    math::{Quat, Vec2},
-    render::view::Visibility,
+    math::Vec2,
     time::{Fixed, Time},
-    transform::components::Transform,
 };
 
 use rand::distr::{Distribution, Uniform};
@@ -33,7 +31,6 @@ pub struct Pinned {
 
 #[derive(Default, Bundle)]
 pub struct MotionBundle {
-    pub transform: Transform,
     pub position: Position,
     pub velocity: Velocity,
     pub acceleration: Acceleration,
@@ -50,7 +47,6 @@ impl MotionBundle {
         let velocity = Vec2::new(velocities.sample(&mut rng), velocities.sample(&mut rng));
 
         Self {
-            transform: Transform::from_translation(position.extend(0.0)),
             position: Position(position),
             velocity: Velocity(velocity),
             acceleration: Acceleration(Vec2::ZERO),
@@ -68,7 +64,6 @@ impl MotionBundle {
         let velocity = Vec2::new(velocities.sample(&mut rng), velocities.sample(&mut rng));
 
         Self {
-            transform: Transform::from_translation(position.extend(0.0)),
             position: Position(position),
             velocity: Velocity(velocity),
             acceleration: Acceleration(Vec2::ZERO),
@@ -109,14 +104,7 @@ impl Plugin for SimPlugin {
             FixedUpdate,
             (update_positions, repel, attract, update_velocities).chain(),
         );
-        app.add_systems(
-            Update,
-            (
-                lock_pinned,
-                update_entity_transforms,
-                update_relationship_transforms,
-            ),
-        );
+        app.add_systems(Update, lock_pinned);
         app.insert_resource(Paused(false));
     }
 }
@@ -131,53 +119,6 @@ fn lock_pinned(
             velocity.0 = Vec2::ZERO;
         }
     }
-}
-
-fn update_entity_transforms(
-    paused: Res<Paused>,
-    mut query: Query<(&mut Transform, &Position, &Velocity)>,
-    time: Res<Time<Fixed>>,
-) {
-    if paused.0 {
-        return;
-    };
-
-    query
-        .iter_mut()
-        .for_each(|(mut transform, position, velocity)| {
-            transform.translation =
-                (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
-        })
-}
-
-fn update_relationship_transforms(
-    paused: Res<Paused>,
-    relationship_parent: Single<&Visibility, With<crate::RelationshipParent>>,
-    mut relationships: Query<
-        (&Relationship, &mut Transform),
-        (Without<Position>, Without<Velocity>),
-    >,
-    entities: Query<(&Position, &Velocity), Without<Relationship>>,
-    time: Res<Time<Fixed>>,
-) {
-    if *relationship_parent == Visibility::Hidden || paused.0 {
-        return;
-    }
-
-    relationships.iter_mut().for_each(|(rel, mut transform)| {
-        let Ok((from_pos, from_vel)) = entities.get(rel.from) else {
-            return;
-        };
-        let from_pos = from_pos.0 + from_vel.0 * time.overstep_fraction();
-        let Ok((to_pos, to_vel)) = entities.get(rel.to) else {
-            return;
-        };
-        let to_pos = to_pos.0 + to_vel.0 * time.overstep_fraction();
-        let delta = to_pos - from_pos;
-        transform.rotation = Quat::from_rotation_z((to_pos - from_pos).to_angle());
-        transform.scale.x = delta.length();
-        transform.translation = from_pos.midpoint(to_pos).extend(-1.0);
-    });
 }
 
 fn update_positions(
@@ -237,8 +178,8 @@ fn repel(
 
 fn attract(
     paused: Res<Paused>,
-    relationships: Query<(&Relationship, &Weight), (Without<Position>, Without<Acceleration>)>,
-    mut entities: Query<(&mut Acceleration, &Position, &RelationCount), Without<Relationship>>,
+    relationships: Query<(&Relationship, &Weight)>,
+    mut entities: Query<(&mut Acceleration, &Position, &RelationCount)>,
 ) {
     if paused.0 {
         return;
