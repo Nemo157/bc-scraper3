@@ -13,12 +13,17 @@
     systems = builtins.filter
       (system: nixpkgs.lib.strings.hasSuffix "linux" system)
       flake-utils.lib.defaultSystems;
-  in flake-utils.lib.eachSystem systems (system:
+  in {
+    overlays.default = final: prev: {
+      bc-scraper3 = final.callPackage ./package.nix {};
+    };
+  } // flake-utils.lib.eachSystem systems (system:
     let
       pkgs = import nixpkgs {
         inherit system;
         overlays = [
           rust-overlay.overlays.default
+          self.overlays.default
         ];
       };
 
@@ -33,21 +38,16 @@
         }
       );
     in {
-      devShells.default = pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [
-          fontconfig
-          pkg-config
-          rust-toolchain
-        ];
+      packages.default = pkgs.bc-scraper3;
 
-        buildInputs = with pkgs; [
-          alsa-lib
-          libxkbcommon
-          udev
-          wayland
-          wayland-protocols
-          openssl
-        ];
+      checks = {
+        inherit (pkgs) bc-scraper3;
+      };
+
+      devShells.default = pkgs.mkShell {
+        inputsFrom = [ pkgs.bc-scraper3 ];
+
+        nativeBuildInputs = [ rust-toolchain ];
 
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
           libglvnd
