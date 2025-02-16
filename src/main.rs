@@ -12,7 +12,7 @@ use bevy::{
     input::keyboard::{Key, KeyboardInput},
     picking::mesh_picking::MeshPickingPlugin,
     render::view::Visibility,
-    time::{Fixed, Time},
+    time::{Fixed, Time, Virtual},
     transform::components::Transform,
     utils::default,
     DefaultPlugins,
@@ -20,7 +20,10 @@ use bevy::{
 
 use clap::Parser;
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    time::Duration,
+};
 
 mod background;
 mod camera;
@@ -81,6 +84,7 @@ fn main() -> eyre::Result<()> {
 
     App::new()
         .insert_resource(Time::<Fixed>::from_hz(20.0))
+        .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_millis(50)))
         .insert_resource(args)
         .insert_resource(background::Thread::spawn(dirs.cache_dir())?)
         .insert_resource(KnownEntities::default())
