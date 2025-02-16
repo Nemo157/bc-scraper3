@@ -83,6 +83,7 @@ fn update(
                 shown_components.push(component);
                 (component, depth) = components.next().unwrap();
             }
+            shown_components.drain(depth..);
 
             let suffix = &diagnostic.suffix;
             if let Some(value) = diagnostic.smoothed() {
@@ -115,6 +116,8 @@ fn update(
                 )
                 .unwrap();
             }
+
+            shown_components.push(component);
         }
     }
 }

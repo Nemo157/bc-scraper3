@@ -3,18 +3,24 @@ use bevy::{
     diagnostic::Diagnostics,
     ecs::{
         bundle::Bundle,
+        change_detection::{DetectChanges, Mut},
         component::{Component, ComponentId},
         entity::Entity,
         query::Changed,
         schedule::IntoSystemConfigs,
-        system::{Query, Res, Resource},
+        system::{Query, Res, ResMut, Resource},
         world::DeferredWorld,
     },
-    math::Vec2,
+    math::{I64Vec2, Vec2},
     time::{Fixed, Time},
+    utils::{AHasher, PassHash},
 };
 
-use std::time::Instant;
+use std::{
+    collections::{hash_map, HashMap, HashSet},
+    hash::BuildHasherDefault,
+    time::{Duration, Instant},
+};
 
 use rand::distr::{Distribution, Uniform};
 
@@ -101,6 +107,73 @@ fn increment_relation_count(mut world: DeferredWorld, entity: Entity, _id: Compo
 #[derive(Default, Resource)]
 pub struct Paused(pub bool);
 
+#[derive(Default, Resource)]
+pub struct Partitions(HashMap<I64Vec2, HashSet<Entity, PassHash>, BuildHasherDefault<AHasher>>);
+
+impl Partitions {
+    pub const SIZE: f32 = 400.;
+
+    fn key(point: Vec2) -> I64Vec2 {
+        (point / Self::SIZE).floor().as_i64vec2()
+    }
+
+    fn update(&mut self, from: Vec2, to: Vec2, entity: Entity) {
+        let from = Self::key(from);
+        let to = Self::key(to);
+
+        if from != to {
+            if let hash_map::Entry::Occupied(mut partition) = self.0.entry(from) {
+                partition.get_mut().remove(&entity);
+                if partition.get().is_empty() {
+                    partition.remove();
+                }
+            }
+            self.0.entry(to).or_default().insert(entity);
+        }
+    }
+
+    fn add(&mut self, point: Vec2, entity: Entity) {
+        self.0.entry(Self::key(point)).or_default().insert(entity);
+    }
+
+    fn iter(
+        &self,
+    ) -> impl Iterator<Item = (I64Vec2, impl Iterator<Item = Entity> + use<'_>)> + use<'_> {
+        self.0.iter().map(|(&key, set)| (key, set.iter().copied()))
+    }
+
+    fn nearby_keys(point: Vec2) -> [I64Vec2; 4] {
+        let key = Self::key(point);
+        let center = (key.as_vec2() * Self::SIZE) + Vec2::new(Self::SIZE / 2., Self::SIZE / 2.);
+        let (x, y) = (
+            if center.x < point.x { 1 } else { -1 },
+            if center.y < point.y { 1 } else { -1 },
+        );
+        [
+            key,
+            key + I64Vec2::new(0, y),
+            key + I64Vec2::new(x, 0),
+            key + I64Vec2::new(x, y),
+        ]
+    }
+
+    fn nearby(&self, point: Vec2) -> impl Iterator<Item = Entity> + use<'_> {
+        Self::nearby_keys(point)
+            .into_iter()
+            .filter_map(|key| self.0.get(&key))
+            .flatten()
+            .copied()
+    }
+
+    fn distant_keys(&self, point: Vec2) -> impl Iterator<Item = I64Vec2> + use<'_> {
+        let nearby_keys = Self::nearby_keys(point);
+        self.0
+            .keys()
+            .copied()
+            .filter(move |key| !nearby_keys.contains(key))
+    }
+}
+
 pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
@@ -111,6 +184,7 @@ impl Plugin for SimPlugin {
         );
         app.add_systems(Update, lock_pinned);
         app.insert_resource(Paused(false));
+        app.insert_resource(Partitions::default());
         app.add_plugins(self::diagnostic::Plugin);
     }
 }
@@ -129,7 +203,8 @@ fn lock_pinned(
 
 fn update_positions(
     paused: Res<Paused>,
-    mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>,
+    mut partitions: ResMut<Partitions>,
+    mut query: Query<(Mut<Position>, &Velocity, Option<&Pinned>, Entity)>,
     mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
@@ -140,9 +215,15 @@ fn update_positions(
 
     query
         .iter_mut()
-        .for_each(|(mut position, velocity, pinned)| {
+        .for_each(|(mut position, velocity, pinned, entity)| {
             if pinned.map_or(0, |p| p.count) == 0 {
-                position.0 = position.0 + velocity.0;
+                let old_position = position.0;
+                let new_position = position.0 + velocity.0;
+                position.0 = new_position;
+                partitions.update(old_position, new_position, entity);
+            }
+            if position.is_added() {
+                partitions.add(position.0, entity);
             }
         });
 
@@ -178,6 +259,7 @@ fn update_velocities(
 fn repel(
     paused: Res<Paused>,
     mut nodes: Query<(&mut Acceleration, &Position)>,
+    partitions: Res<Partitions>,
     positions: Query<&Position>,
     mut diagnostics: Diagnostics,
 ) {
@@ -187,13 +269,61 @@ fn repel(
 
     let start = Instant::now();
 
+    let partition_start = Instant::now();
+
+    let averages = HashMap::<_, _, BuildHasherDefault<AHasher>>::from_iter(partitions.iter().map(
+        |(key, entities)| {
+            (key, {
+                let (sum, count) = entities
+                    .filter_map(|entity| positions.get(entity).ok())
+                    .fold((Vec2::ZERO, 0), |(average, count), position| {
+                        (average + position.0, count + 1)
+                    });
+                let position = sum / (count as f32);
+                // Note: because of floats and rounding the position might be just outside the
+                // partition if all entities are on the border.
+                (position, count)
+            })
+        },
+    ));
+
+    diagnostics.add_measurement(&self::diagnostic::update::repel::PARTITIONS, || {
+        partition_start.elapsed().as_secs_f64() * 1000.
+    });
+
+    let mut nearby = Duration::ZERO;
+    let mut distant = Duration::ZERO;
+
     nodes.iter_mut().for_each(|(mut acceleration, position)| {
         acceleration.0 = position.0 * -0.1;
-        positions.iter().for_each(|other_position| {
-            let dist = position.0 - other_position.0;
-            let dsq = position.0.distance_squared(other_position.0).max(0.001);
-            acceleration.0 += dist * 1000.0 / dsq;
-        })
+        let nearby_start = Instant::now();
+        partitions
+            .nearby(position.0)
+            .filter_map(|entity| positions.get(entity).ok())
+            .for_each(|other_position| {
+                let dist = position.0 - other_position.0;
+                let dsq = position.0.distance_squared(other_position.0).max(0.001);
+                acceleration.0 += dist * 1000.0 / dsq;
+            });
+        nearby += nearby_start.elapsed();
+        let distant_start = Instant::now();
+        partitions
+            .distant_keys(position.0)
+            .filter_map(|key| averages.get(&key))
+            .for_each(|&(other_position, count)| {
+                let dist = position.0 - other_position;
+                let dsq = position.0.distance_squared(other_position).max(0.001);
+                acceleration.0 += dist * 1000.0 * (count as f32) / dsq;
+            });
+        distant += distant_start.elapsed();
+    });
+
+    diagnostics.add_measurement(&self::diagnostic::update::repel::NEARBY, || {
+        nearby.as_secs_f64() * 1000.
+    });
+
+    diagnostics.add_measurement(&self::diagnostic::update::repel::DISTANT, || {
+        distant.as_secs_f64() * 1000.
     });
 
     diagnostics.add_measurement(&self::diagnostic::update::REPEL, || {
