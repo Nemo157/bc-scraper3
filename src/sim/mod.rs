@@ -177,7 +177,7 @@ fn update_velocities(
 
 fn repel(
     paused: Res<Paused>,
-    mut entities: Query<(&mut Acceleration, &Position)>,
+    mut nodes: Query<(&mut Acceleration, &Position)>,
     positions: Query<&Position>,
     mut diagnostics: Diagnostics,
 ) {
@@ -187,16 +187,14 @@ fn repel(
 
     let start = Instant::now();
 
-    entities
-        .iter_mut()
-        .for_each(|(mut acceleration, position)| {
-            acceleration.0 = position.0 * -0.1;
-            positions.iter().for_each(|other_position| {
-                let dist = position.0 - other_position.0;
-                let dsq = position.0.distance_squared(other_position.0).max(0.001);
-                acceleration.0 += dist * 1000.0 / dsq;
-            })
-        });
+    nodes.iter_mut().for_each(|(mut acceleration, position)| {
+        acceleration.0 = position.0 * -0.1;
+        positions.iter().for_each(|other_position| {
+            let dist = position.0 - other_position.0;
+            let dsq = position.0.distance_squared(other_position.0).max(0.001);
+            acceleration.0 += dist * 1000.0 / dsq;
+        })
+    });
 
     diagnostics.add_measurement(&self::diagnostic::update::REPEL, || {
         start.elapsed().as_secs_f64() * 1000.
@@ -206,7 +204,7 @@ fn repel(
 fn attract(
     paused: Res<Paused>,
     relationships: Query<(&Relationship, &Weight)>,
-    mut entities: Query<(&mut Acceleration, &Position, &RelationCount)>,
+    mut nodes: Query<(&mut Acceleration, &Position, &RelationCount)>,
     mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
@@ -217,18 +215,18 @@ fn attract(
 
     relationships.iter().for_each(|(rel, weight)| {
         let attraction = {
-            let Ok((_, from, _)) = entities.get(rel.from) else {
+            let Ok((_, from, _)) = nodes.get(rel.from) else {
                 return;
             };
-            let Ok((_, to, _)) = entities.get(rel.to) else {
+            let Ok((_, to, _)) = nodes.get(rel.to) else {
                 return;
             };
             (to.0 - from.0) * 2.0 * weight.0
         };
-        if let Ok((mut from, _, relations)) = entities.get_mut(rel.from) {
+        if let Ok((mut from, _, relations)) = nodes.get_mut(rel.from) {
             from.0 += attraction / (relations.count as f32).sqrt();
         }
-        if let Ok((mut to, _, relations)) = entities.get_mut(rel.to) {
+        if let Ok((mut to, _, relations)) = nodes.get_mut(rel.to) {
             to.0 -= attraction / (relations.count as f32).sqrt();
         }
     });

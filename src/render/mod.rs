@@ -51,7 +51,7 @@ impl bevy::app::Plugin for Plugin {
 
         app.add_systems(
             bevy::app::Update,
-            (update_entity_transforms, update_relationship_transforms),
+            (update_node_transforms, update_relationship_transforms),
         );
 
         app.add_plugins(self::diagnostic::Plugin);
@@ -108,7 +108,7 @@ pub fn init_meshes(mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Asset
     );
 }
 
-fn update_entity_transforms(
+fn update_node_transforms(
     paused: Res<Paused>,
     mut query: Query<(Mut<Transform>, &Position, &Velocity)>,
     time: Res<Time<Fixed>>,
@@ -138,18 +138,18 @@ fn update_relationship_transforms(
     paused: Res<Paused>,
     relationship_parent: Single<&Visibility, With<RelationshipParent>>,
     mut relationships: Query<(&Relationship, Mut<Transform>)>,
-    entities: Query<(&Position, &Velocity)>,
+    nodes: Query<(&Position, &Velocity)>,
     time: Res<Time<Fixed>>,
     mut diagnostics: Diagnostics,
 ) {
     let start = Instant::now();
 
     let update = |(rel, mut transform): (&Relationship, Mut<Transform>)| {
-        let Ok((from_pos, from_vel)) = entities.get(rel.from) else {
+        let Ok((from_pos, from_vel)) = nodes.get(rel.from) else {
             return;
         };
         let from_pos = from_pos.0 + from_vel.0 * time.overstep_fraction();
-        let Ok((to_pos, to_vel)) = entities.get(rel.to) else {
+        let Ok((to_pos, to_vel)) = nodes.get(rel.to) else {
             return;
         };
         let to_pos = to_pos.0 + to_vel.0 * time.overstep_fraction();
