@@ -6,12 +6,14 @@ use bevy::{
         query::With,
         system::{Commands, Query, Resource, Single},
     },
+    input::keyboard::KeyCode,
     input::{
         mouse::{AccumulatedMouseScroll, MouseButton, MouseScrollUnit},
         ButtonInput,
     },
     math::Vec2,
     render::camera::Camera,
+    time::{Time, Virtual},
     transform::components::{GlobalTransform, Transform},
     window::{PrimaryWindow, Window},
 };
@@ -70,9 +72,21 @@ fn drag(
 
 fn zoom(
     scroll: Res<AccumulatedMouseScroll>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     cursor: Res<Cursor>,
     camera: Single<(&mut Transform, &GlobalTransform, &Camera), ()>,
+    mut time: ResMut<Time<Virtual>>,
 ) {
+    if keyboard.pressed(KeyCode::ShiftLeft) {
+        if scroll.unit == MouseScrollUnit::Line && scroll.delta.y != 0.0 {
+            let new_value = time.relative_speed() + scroll.delta.y.signum() * 0.125;
+            if new_value >= 0.0 {
+                time.set_relative_speed(new_value);
+            }
+        }
+        return;
+    }
+
     let (mut transform, global_transform, camera) = camera.into_inner();
 
     let Ok(position) = camera.viewport_to_world_2d(&global_transform, cursor.position) else {

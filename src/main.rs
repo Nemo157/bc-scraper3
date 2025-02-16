@@ -53,6 +53,7 @@ At least one option must be passed to select initial data
   <bold>Hover</bold> node to pin it
   <bold>Left-Click drag</bold> node to move it
   <bold>Scroll</bold> to zoom
+  <bold>Shift+Scroll</bold> to scale timestep
   <bold>Short-Click</bold> node to expand it
   <bold>Shift+Short-Click</bold> node to expand its linked nodes
   <bold>Ctrl+Shift+Short-Click</bold> node to expand its linked nodes' linked nodes

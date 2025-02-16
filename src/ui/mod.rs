@@ -17,6 +17,7 @@ use bevy::{
     },
     render::camera::Camera,
     text::TextFont,
+    time::{Time, Virtual},
     transform::components::Transform,
     ui::widget::{Label, Text},
     ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, Node},
@@ -36,6 +37,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
+        app.add_systems(bevy::app::Update, update_time);
         app.add_observer(pointer_down);
         app.add_observer(pointer_drag);
         app.add_observer(pointer_up);
@@ -49,6 +51,9 @@ impl Plugin for UiPlugin {
 
 #[derive(Default, Component)]
 struct HoverDetails;
+
+#[derive(Default, Component)]
+struct TimeText;
 
 fn setup(mut commands: Commands) {
     commands
@@ -64,6 +69,13 @@ fn setup(mut commands: Commands) {
         ))
         .with_children(|parent| {
             parent.spawn((
+                Text::default(),
+                TextFont::default(),
+                Label,
+                TimeText,
+                PickingBehavior::IGNORE,
+            ));
+            parent.spawn((
                 Text::new("Hovered Entity"),
                 TextFont::default().with_font_size(21.0),
                 Label,
@@ -77,6 +89,10 @@ fn setup(mut commands: Commands) {
                 PickingBehavior::IGNORE,
             ));
         });
+}
+
+fn update_time(time: Res<Time<Virtual>>, mut text: Single<&mut Text, With<TimeText>>) {
+    ***text = format!("speed: {}", time.relative_speed());
 }
 
 #[derive(Default, Component)]
