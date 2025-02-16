@@ -1,7 +1,7 @@
 use bevy::{
-    app::{App, Startup, Update},
     asset::{Assets, Handle},
     color::Color,
+    diagnostic::Diagnostics,
     ecs::{
         query::With,
         system::{Query, Res, ResMut, Single},
@@ -20,6 +20,10 @@ use crate::{
     sim::{Paused, Position, Relationship, Velocity},
     RelationshipParent,
 };
+
+use std::time::Instant;
+
+mod diagnostic;
 
 static ALBUM_MESH_HANDLE: Handle<Mesh> = Handle::weak_from_u128(0xe7233fda8e904a2f8cff6638b3bc5e7f);
 static ALBUM_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
@@ -41,13 +45,15 @@ static LINK_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
 pub struct Plugin;
 
 impl bevy::app::Plugin for Plugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, init_meshes);
+    fn build(&self, app: &mut bevy::app::App) {
+        app.add_systems(bevy::app::Startup, init_meshes);
 
         app.add_systems(
-            Update,
+            bevy::app::Update,
             (update_entity_transforms, update_relationship_transforms),
         );
+
+        app.add_plugins(self::diagnostic::Plugin);
 
         app.register_required_components_with::<AlbumId, _>(|| Mesh2d(ALBUM_MESH_HANDLE.clone()));
         app.register_required_components_with::<AlbumId, _>(|| {
@@ -105,17 +111,24 @@ fn update_entity_transforms(
     paused: Res<Paused>,
     mut query: Query<(&mut Transform, &Position, &Velocity)>,
     time: Res<Time<Fixed>>,
+    mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
         return;
     };
+
+    let start = Instant::now();
 
     query
         .iter_mut()
         .for_each(|(mut transform, position, velocity)| {
             transform.translation =
                 (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
-        })
+        });
+
+    diagnostics.add_measurement(&self::diagnostic::NODES, || {
+        start.elapsed().as_secs_f64() * 1000.
+    });
 }
 
 fn update_relationship_transforms(
@@ -124,10 +137,13 @@ fn update_relationship_transforms(
     mut relationships: Query<(&Relationship, &mut Transform)>,
     entities: Query<(&Position, &Velocity)>,
     time: Res<Time<Fixed>>,
+    mut diagnostics: Diagnostics,
 ) {
     if *relationship_parent == Visibility::Hidden || paused.0 {
         return;
     }
+
+    let start = Instant::now();
 
     relationships.iter_mut().for_each(|(rel, mut transform)| {
         let Ok((from_pos, from_vel)) = entities.get(rel.from) else {
@@ -142,5 +158,9 @@ fn update_relationship_transforms(
         transform.rotation = Quat::from_rotation_z((to_pos - from_pos).to_angle());
         transform.scale.x = delta.length();
         transform.translation = from_pos.midpoint(to_pos).extend(-1.0);
+    });
+
+    diagnostics.add_measurement(&self::diagnostic::RELATIONS, || {
+        start.elapsed().as_secs_f64() * 1000.
     });
 }

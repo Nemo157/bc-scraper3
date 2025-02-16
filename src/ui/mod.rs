@@ -29,6 +29,8 @@ use crate::{
     sim::{Pinned, Relationship},
 };
 
+mod diagnostic;
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
@@ -40,6 +42,8 @@ impl Plugin for UiPlugin {
         app.add_observer(pointer_click);
         app.add_observer(pointer_over);
         app.add_observer(pointer_out);
+
+        app.add_plugins(self::diagnostic::Plugin);
     }
 }
 

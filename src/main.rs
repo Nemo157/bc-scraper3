@@ -25,6 +25,7 @@ use std::collections::{hash_map::Entry, HashMap};
 mod background;
 mod camera;
 mod data;
+mod diagnostic;
 mod render;
 mod sim;
 mod ui;
@@ -89,10 +90,12 @@ fn main() -> eyre::Result<()> {
                 ..default()
             }),
             MeshPickingPlugin,
-            camera::CameraPlugin,
-            sim::SimPlugin,
-            ui::UiPlugin,
-            render::Plugin,
+            self::camera::CameraPlugin,
+            self::data::Plugin,
+            self::diagnostic::Plugin,
+            self::render::Plugin,
+            self::sim::SimPlugin,
+            self::ui::UiPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (receive, keyinput))

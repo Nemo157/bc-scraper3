@@ -1,5 +1,6 @@
 use bevy::{
     app::{App, FixedUpdate, Plugin, Update},
+    diagnostic::Diagnostics,
     ecs::{
         bundle::Bundle,
         component::{Component, ComponentId},
@@ -13,7 +14,11 @@ use bevy::{
     time::{Fixed, Time},
 };
 
+use std::time::Instant;
+
 use rand::distr::{Distribution, Uniform};
+
+mod diagnostic;
 
 #[derive(Default, Component, Copy, Clone)]
 pub struct Position(pub Vec2);
@@ -106,6 +111,7 @@ impl Plugin for SimPlugin {
         );
         app.add_systems(Update, lock_pinned);
         app.insert_resource(Paused(false));
+        app.add_plugins(self::diagnostic::Plugin);
     }
 }
 
@@ -124,10 +130,13 @@ fn lock_pinned(
 fn update_positions(
     paused: Res<Paused>,
     mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>,
+    mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
         return;
     };
+
+    let start = Instant::now();
 
     query
         .iter_mut()
@@ -136,15 +145,22 @@ fn update_positions(
                 position.0 = position.0 + velocity.0;
             }
         });
+
+    diagnostics.add_measurement(&self::diagnostic::update::POSITIONS, || {
+        start.elapsed().as_secs_f64() * 1000.
+    });
 }
 
 fn update_velocities(
     paused: Res<Paused>,
     mut query: Query<(&mut Velocity, &Acceleration, Option<&Pinned>)>,
+    mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
         return;
     };
+
+    let start = Instant::now();
 
     query
         .iter_mut()
@@ -153,16 +169,23 @@ fn update_velocities(
                 velocity.0 = (velocity.0 * 0.7 + acceleration.0 * 0.05).clamp_length_max(50.0);
             }
         });
+
+    diagnostics.add_measurement(&self::diagnostic::update::VELOCITIES, || {
+        start.elapsed().as_secs_f64() * 1000.
+    });
 }
 
 fn repel(
     paused: Res<Paused>,
     mut entities: Query<(&mut Acceleration, &Position)>,
     positions: Query<&Position>,
+    mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
         return;
     };
+
+    let start = Instant::now();
 
     entities
         .iter_mut()
@@ -174,16 +197,23 @@ fn repel(
                 acceleration.0 += dist * 1000.0 / dsq;
             })
         });
+
+    diagnostics.add_measurement(&self::diagnostic::update::REPEL, || {
+        start.elapsed().as_secs_f64() * 1000.
+    });
 }
 
 fn attract(
     paused: Res<Paused>,
     relationships: Query<(&Relationship, &Weight)>,
     mut entities: Query<(&mut Acceleration, &Position, &RelationCount)>,
+    mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
         return;
     };
+
+    let start = Instant::now();
 
     relationships.iter().for_each(|(rel, weight)| {
         let attraction = {
@@ -201,5 +231,9 @@ fn attract(
         if let Ok((mut to, _, relations)) = entities.get_mut(rel.to) {
             to.0 -= attraction / (relations.count as f32).sqrt();
         }
+    });
+
+    diagnostics.add_measurement(&self::diagnostic::update::ATTRACT, || {
+        start.elapsed().as_secs_f64() * 1000.
     });
 }

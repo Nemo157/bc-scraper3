@@ -11,6 +11,8 @@ use rand_distr::Poisson;
 
 use crate::sim::{MotionBundle, Relationship, Weight};
 
+mod diagnostic;
+
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
 #[require(EntityType(|| EntityType::Album))]
 pub struct AlbumId(pub u64);
@@ -93,6 +95,14 @@ impl Relationship {
             weight: Weight(weight),
             visibility: Visibility::Inherited,
         }
+    }
+}
+
+pub struct Plugin;
+
+impl bevy::app::Plugin for Plugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.add_plugins(self::diagnostic::Plugin);
     }
 }
 
