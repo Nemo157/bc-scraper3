@@ -4,7 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.15.2", features = ["wayland"] }
+bevy = { version = "0.15.2", default-features = false, features = [
+  "bevy_asset",
+  "bevy_color",
+  "bevy_core_pipeline",
+  "bevy_mesh_picking_backend",
+  "bevy_picking",
+  "bevy_render",
+  "bevy_text",
+  "bevy_ui",
+  "bevy_window",
+  "bevy_winit",
+  "default_font",
+  "multi_threaded",
+  "sysinfo_plugin",
+  "wayland",
+] }
 chrono = "0.4.39"
 clap = { version = "4.5.28", features = ["derive"] }
 color-eyre.version = "0.6.3"
