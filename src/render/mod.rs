@@ -3,6 +3,7 @@ use bevy::{
     color::Color,
     diagnostic::Diagnostics,
     ecs::{
+        change_detection::{DetectChanges, Mut},
         query::With,
         system::{Query, Res, ResMut, Single},
     },
@@ -109,22 +110,24 @@ pub fn init_meshes(mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Asset
 
 fn update_entity_transforms(
     paused: Res<Paused>,
-    mut query: Query<(&mut Transform, &Position, &Velocity)>,
+    mut query: Query<(Mut<Transform>, &Position, &Velocity)>,
     time: Res<Time<Fixed>>,
     mut diagnostics: Diagnostics,
 ) {
-    if paused.0 {
-        return;
-    };
-
     let start = Instant::now();
 
-    query
-        .iter_mut()
-        .for_each(|(mut transform, position, velocity)| {
-            transform.translation =
-                (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
-        });
+    let update = |(mut transform, position, velocity): (Mut<Transform>, &Position, &Velocity)| {
+        transform.translation = (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
+    };
+
+    if paused.0 {
+        query
+            .iter_mut()
+            .filter(|(transform, _, _)| transform.is_added())
+            .for_each(update);
+    } else {
+        query.iter_mut().for_each(update);
+    }
 
     diagnostics.add_measurement(&self::diagnostic::NODES, || {
         start.elapsed().as_secs_f64() * 1000.
@@ -134,18 +137,14 @@ fn update_entity_transforms(
 fn update_relationship_transforms(
     paused: Res<Paused>,
     relationship_parent: Single<&Visibility, With<RelationshipParent>>,
-    mut relationships: Query<(&Relationship, &mut Transform)>,
+    mut relationships: Query<(&Relationship, Mut<Transform>)>,
     entities: Query<(&Position, &Velocity)>,
     time: Res<Time<Fixed>>,
     mut diagnostics: Diagnostics,
 ) {
-    if *relationship_parent == Visibility::Hidden || paused.0 {
-        return;
-    }
-
     let start = Instant::now();
 
-    relationships.iter_mut().for_each(|(rel, mut transform)| {
+    let update = |(rel, mut transform): (&Relationship, Mut<Transform>)| {
         let Ok((from_pos, from_vel)) = entities.get(rel.from) else {
             return;
         };
@@ -158,7 +157,16 @@ fn update_relationship_transforms(
         transform.rotation = Quat::from_rotation_z((to_pos - from_pos).to_angle());
         transform.scale.x = delta.length();
         transform.translation = from_pos.midpoint(to_pos).extend(-1.0);
-    });
+    };
+
+    if *relationship_parent == Visibility::Hidden || paused.0 {
+        relationships
+            .iter_mut()
+            .filter(|(_, transform)| transform.is_added())
+            .for_each(update);
+    } else {
+        relationships.iter_mut().for_each(update);
+    }
 
     diagnostics.add_measurement(&self::diagnostic::RELATIONS, || {
         start.elapsed().as_secs_f64() * 1000.
