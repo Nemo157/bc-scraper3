@@ -13,3 +13,10 @@ codegen-backend = "llvm"
 rustflags = [
   "-Zshare-generics=y",
 ]
+
+[alias]
+r = [
+  "run",
+  "--release",
+  "--features=bevy/dynamic_linking",
+]
