@@ -19,7 +19,8 @@ use bevy::{
 use std::{
     collections::{hash_map, HashMap, HashSet},
     hash::BuildHasherDefault,
-    time::{Duration, Instant},
+    sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
 };
 
 use rand::distr::{Distribution, Uniform};
@@ -244,7 +245,7 @@ fn update_velocities(
     let start = Instant::now();
 
     query
-        .iter_mut()
+        .par_iter_mut()
         .for_each(|(mut velocity, acceleration, pinned)| {
             if pinned.map_or(0, |p| p.count) == 0 {
                 velocity.0 = (velocity.0 * 0.7 + acceleration.0 * 0.05).clamp_length_max(50.0);
@@ -291,39 +292,46 @@ fn repel(
         partition_start.elapsed().as_secs_f64() * 1000.
     });
 
-    let mut nearby = Duration::ZERO;
-    let mut distant = Duration::ZERO;
+    let nearby_us = AtomicU64::new(0);
+    let distant_us = AtomicU64::new(0);
 
-    nodes.iter_mut().for_each(|(mut acceleration, position)| {
-        acceleration.0 = position.0 * -0.1;
-        let nearby_start = Instant::now();
-        partitions
-            .nearby(position.0)
-            .filter_map(|entity| positions.get(entity).ok())
-            .for_each(|other_position| {
-                let dist = position.0 - other_position.0;
-                let dsq = position.0.distance_squared(other_position.0).max(0.001);
-                acceleration.0 += dist * 1000.0 / dsq;
-            });
-        nearby += nearby_start.elapsed();
-        let distant_start = Instant::now();
-        partitions
-            .distant_keys(position.0)
-            .filter_map(|key| averages.get(&key))
-            .for_each(|&(other_position, count)| {
-                let dist = position.0 - other_position;
-                let dsq = position.0.distance_squared(other_position).max(0.001);
-                acceleration.0 += dist * 1000.0 * (count as f32) / dsq;
-            });
-        distant += distant_start.elapsed();
-    });
+    nodes
+        .par_iter_mut()
+        .for_each(|(mut acceleration, position)| {
+            acceleration.0 = position.0 * -0.1;
+
+            let nearby_start = Instant::now();
+            partitions
+                .nearby(position.0)
+                .filter_map(|entity| positions.get(entity).ok())
+                .for_each(|other_position| {
+                    let dist = position.0 - other_position.0;
+                    let dsq = position.0.distance_squared(other_position.0).max(0.001);
+                    acceleration.0 += dist * 1000.0 / dsq;
+                });
+            nearby_us.fetch_add(nearby_start.elapsed().as_micros() as u64, Ordering::Relaxed);
+
+            let distant_start = Instant::now();
+            partitions
+                .distant_keys(position.0)
+                .filter_map(|key| averages.get(&key))
+                .for_each(|&(other_position, count)| {
+                    let dist = position.0 - other_position;
+                    let dsq = position.0.distance_squared(other_position).max(0.001);
+                    acceleration.0 += dist * 1000.0 * (count as f32) / dsq;
+                });
+            distant_us.fetch_add(
+                distant_start.elapsed().as_micros() as u64,
+                Ordering::Relaxed,
+            );
+        });
 
     diagnostics.add_measurement(&self::diagnostic::update::repel::NEARBY, || {
-        nearby.as_secs_f64() * 1000.
+        nearby_us.load(Ordering::Relaxed) as f64 / 1000.
     });
 
     diagnostics.add_measurement(&self::diagnostic::update::repel::DISTANT, || {
-        distant.as_secs_f64() * 1000.
+        distant_us.load(Ordering::Relaxed) as f64 / 1000.
     });
 
     diagnostics.add_measurement(&self::diagnostic::update::REPEL, || {

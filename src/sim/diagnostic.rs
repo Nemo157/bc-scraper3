@@ -52,12 +52,14 @@ impl bevy::app::Plugin for Plugin {
             self::update::POSITIONS,
             self::update::REPEL,
             self::update::repel::PARTITIONS,
-            self::update::repel::NEARBY,
-            self::update::repel::DISTANT,
             self::update::ATTRACT,
             self::update::VELOCITIES,
         ] {
             app.register_diagnostic(Diagnostic::new(path).with_suffix("ms"));
+        }
+
+        for path in [self::update::repel::NEARBY, self::update::repel::DISTANT] {
+            app.register_diagnostic(Diagnostic::new(path).with_suffix("ms*"));
         }
 
         for path in [
