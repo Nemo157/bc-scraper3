@@ -87,7 +87,7 @@ fn update(
 
             let suffix = &diagnostic.suffix;
             if let Some(value) = diagnostic.smoothed() {
-                if value.fract() == 0. {
+                if value.fract() == 0. && suffix.is_empty() {
                     writeln!(
                         ***text,
                         "{:depth$}{component:width$} {value:>5.0}   {suffix}",
