@@ -3,7 +3,6 @@ use bevy::{
     hierarchy::BuildChildren,
     picking::PickingBehavior,
     render::view::Visibility,
-    transform::components::Transform,
 };
 
 use rand::{distr::Distribution, seq::IndexedRandom, Rng};
@@ -80,7 +79,6 @@ pub struct User {
 #[derive(Bundle)]
 pub struct RelationshipBundle {
     relationship: Relationship,
-    transform: Transform,
     picking_behavior: PickingBehavior,
     weight: Weight,
     visibility: Visibility,
@@ -90,7 +88,6 @@ impl Relationship {
     pub fn bundle(self, weight: f32) -> RelationshipBundle {
         RelationshipBundle {
             relationship: self,
-            transform: Transform::IDENTITY,
             picking_behavior: PickingBehavior::IGNORE,
             weight: Weight(weight),
             visibility: Visibility::Inherited,

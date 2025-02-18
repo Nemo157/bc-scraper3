@@ -3,12 +3,12 @@ use bevy::{
     color::Color,
     diagnostic::Diagnostics,
     ecs::{
-        change_detection::{DetectChanges, Mut},
-        query::With,
-        system::{Query, Res, ResMut, Single},
+        entity::Entity,
+        query::{With, Without},
+        system::{Commands, Query, Res, ResMut, Single},
     },
     math::primitives::{Annulus, Circle, Rectangle},
-    math::Quat,
+    math::{Quat, Vec3},
     render::mesh::{Mesh, Mesh2d},
     render::view::Visibility,
     sprite::{ColorMaterial, MeshMaterial2d},
@@ -47,42 +47,27 @@ pub struct Plugin;
 
 impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.add_systems(bevy::app::Startup, init_meshes);
+        app.add_systems(bevy::app::Startup, setup_meshes);
 
         app.add_systems(
             bevy::app::Update,
-            (update_node_transforms, update_relationship_transforms),
+            (
+                init_meshes,
+                init_node_transforms,
+                update_node_transforms,
+                init_relationship_transforms,
+                update_relationship_transforms,
+            ),
         );
 
         app.add_plugins(self::diagnostic::Plugin);
-
-        app.register_required_components_with::<AlbumId, _>(|| Mesh2d(ALBUM_MESH_HANDLE.clone()));
-        app.register_required_components_with::<AlbumId, _>(|| {
-            MeshMaterial2d(ALBUM_COLOR_MATERIAL_HANDLE.clone())
-        });
-
-        app.register_required_components_with::<ArtistId, _>(|| Mesh2d(ARTIST_MESH_HANDLE.clone()));
-        app.register_required_components_with::<ArtistId, _>(|| {
-            MeshMaterial2d(ARTIST_COLOR_MATERIAL_HANDLE.clone())
-        });
-
-        app.register_required_components_with::<UserId, _>(|| Mesh2d(USER_MESH_HANDLE.clone()));
-        app.register_required_components_with::<UserId, _>(|| {
-            MeshMaterial2d(USER_COLOR_MATERIAL_HANDLE.clone())
-        });
-
-        app.register_required_components_with::<Relationship, _>(|| {
-            Mesh2d(LINK_MESH_HANDLE.clone())
-        });
-        app.register_required_components_with::<Relationship, _>(|| {
-            MeshMaterial2d(LINK_COLOR_MATERIAL_HANDLE.clone())
-        });
-
-        app.register_required_components::<Position, Transform>();
     }
 }
 
-pub fn init_meshes(mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<ColorMaterial>>) {
+pub fn setup_meshes(
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
     meshes.insert(&ALBUM_MESH_HANDLE, Circle::new(10.0).into());
     materials.insert(
         &ALBUM_COLOR_MATERIAL_HANDLE,
@@ -108,25 +93,74 @@ pub fn init_meshes(mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Asset
     );
 }
 
+fn init_meshes(
+    albums: Query<Entity, (With<AlbumId>, Without<Mesh2d>)>,
+    artists: Query<Entity, (With<ArtistId>, Without<Mesh2d>)>,
+    users: Query<Entity, (With<UserId>, Without<Mesh2d>)>,
+    relationships: Query<Entity, (With<Relationship>, Without<Mesh2d>)>,
+    mut commands: Commands,
+) {
+    for entity in &albums {
+        commands.entity(entity).insert((
+            Mesh2d(ALBUM_MESH_HANDLE.clone()),
+            MeshMaterial2d(ALBUM_COLOR_MATERIAL_HANDLE.clone()),
+        ));
+    }
+
+    for entity in &artists {
+        commands.entity(entity).insert((
+            Mesh2d(ARTIST_MESH_HANDLE.clone()),
+            MeshMaterial2d(ARTIST_COLOR_MATERIAL_HANDLE.clone()),
+        ));
+    }
+
+    for entity in &users {
+        commands.entity(entity).insert((
+            Mesh2d(USER_MESH_HANDLE.clone()),
+            MeshMaterial2d(USER_COLOR_MATERIAL_HANDLE.clone()),
+        ));
+    }
+
+    for entity in &relationships {
+        commands.entity(entity).insert((
+            Mesh2d(LINK_MESH_HANDLE.clone()),
+            MeshMaterial2d(LINK_COLOR_MATERIAL_HANDLE.clone()),
+        ));
+    }
+}
+
+fn node_translation(position: &Position, velocity: &Velocity, time: &Time<Fixed>) -> Vec3 {
+    (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0)
+}
+
+fn init_node_transforms(
+    query: Query<(Entity, &Position, &Velocity), Without<Transform>>,
+    time: Res<Time<Fixed>>,
+    mut commands: Commands,
+) {
+    for (entity, position, velocity) in &query {
+        commands
+            .entity(entity)
+            .insert(Transform::from_translation(node_translation(
+                &position, &velocity, &time,
+            )));
+    }
+}
+
 fn update_node_transforms(
     paused: Res<Paused>,
-    mut query: Query<(Mut<Transform>, &Position, &Velocity)>,
+    mut query: Query<(&mut Transform, &Position, &Velocity)>,
     time: Res<Time<Fixed>>,
     mut diagnostics: Diagnostics,
 ) {
+    if paused.0 {
+        return;
+    }
+
     let start = Instant::now();
 
-    let update = |(mut transform, position, velocity): (Mut<Transform>, &Position, &Velocity)| {
-        transform.translation = (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0);
-    };
-
-    if paused.0 {
-        query
-            .iter_mut()
-            .filter(|(transform, _, _)| transform.is_added())
-            .for_each(update);
-    } else {
-        query.iter_mut().for_each(update);
+    for (mut transform, position, velocity) in &mut query {
+        transform.translation = node_translation(&position, &velocity, &time);
     }
 
     diagnostics.add_measurement(&self::diagnostic::NODES, || {
@@ -134,38 +168,64 @@ fn update_node_transforms(
     });
 }
 
+fn relationship_transform(
+    (from_pos, from_vel): (&Position, &Velocity),
+    (to_pos, to_vel): (&Position, &Velocity),
+    time: &Time<Fixed>,
+) -> Transform {
+    let from = from_pos.0 + from_vel.0 * time.overstep_fraction();
+    let to = to_pos.0 + to_vel.0 * time.overstep_fraction();
+    let delta = to - from;
+    Transform {
+        rotation: Quat::from_rotation_z(delta.to_angle()),
+        scale: Vec3::new(delta.length(), 1.0, 1.0),
+        translation: from.midpoint(to).extend(-1.0),
+    }
+}
+
+fn init_relationship_transforms(
+    relationships: Query<(Entity, &Relationship), Without<Transform>>,
+    nodes: Query<(&Position, &Velocity)>,
+    time: Res<Time<Fixed>>,
+    mut commands: Commands,
+) {
+    for (entity, rel) in &relationships {
+        let Ok(from) = nodes.get(rel.from) else {
+            continue;
+        };
+        let Ok(to) = nodes.get(rel.to) else {
+            continue;
+        };
+
+        commands
+            .entity(entity)
+            .insert(relationship_transform(from, to, &time));
+    }
+}
+
 fn update_relationship_transforms(
     paused: Res<Paused>,
     relationship_parent: Single<&Visibility, With<RelationshipParent>>,
-    mut relationships: Query<(&Relationship, Mut<Transform>)>,
+    mut relationships: Query<(&Relationship, &mut Transform)>,
     nodes: Query<(&Position, &Velocity)>,
     time: Res<Time<Fixed>>,
     mut diagnostics: Diagnostics,
 ) {
+    if *relationship_parent == Visibility::Hidden || paused.0 {
+        return;
+    }
+
     let start = Instant::now();
 
-    let update = |(rel, mut transform): (&Relationship, Mut<Transform>)| {
-        let Ok((from_pos, from_vel)) = nodes.get(rel.from) else {
-            return;
+    for (rel, mut transform) in &mut relationships {
+        let Ok(from) = nodes.get(rel.from) else {
+            continue;
         };
-        let from_pos = from_pos.0 + from_vel.0 * time.overstep_fraction();
-        let Ok((to_pos, to_vel)) = nodes.get(rel.to) else {
-            return;
+        let Ok(to) = nodes.get(rel.to) else {
+            continue;
         };
-        let to_pos = to_pos.0 + to_vel.0 * time.overstep_fraction();
-        let delta = to_pos - from_pos;
-        transform.rotation = Quat::from_rotation_z((to_pos - from_pos).to_angle());
-        transform.scale.x = delta.length();
-        transform.translation = from_pos.midpoint(to_pos).extend(-1.0);
-    };
 
-    if *relationship_parent == Visibility::Hidden || paused.0 {
-        relationships
-            .iter_mut()
-            .filter(|(_, transform)| transform.is_added())
-            .for_each(update);
-    } else {
-        relationships.iter_mut().for_each(update);
+        *transform = relationship_transform(from, to, &time);
     }
 
     diagnostics.add_measurement(&self::diagnostic::RELATIONS, || {

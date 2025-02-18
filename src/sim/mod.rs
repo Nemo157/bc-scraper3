@@ -27,21 +27,21 @@ use rand::distr::{Distribution, Uniform};
 
 mod diagnostic;
 
-#[derive(Default, Component, Copy, Clone)]
+#[derive(Debug, Default, Component, Copy, Clone)]
 pub struct Position(pub Vec2);
 
-#[derive(Default, Component)]
+#[derive(Debug, Default, Component)]
 pub struct Velocity(pub Vec2);
 
-#[derive(Default, Component)]
+#[derive(Debug, Default, Component)]
 pub struct Acceleration(pub Vec2);
 
-#[derive(Default, Component)]
+#[derive(Debug, Default, Component)]
 pub struct Pinned {
     pub count: u32,
 }
 
-#[derive(Default, Bundle)]
+#[derive(Debug, Default, Bundle)]
 pub struct MotionBundle {
     pub position: Position,
     pub velocity: Velocity,
@@ -87,19 +87,19 @@ impl MotionBundle {
     }
 }
 
-#[derive(Default, Component)]
+#[derive(Debug, Default, Component)]
 pub struct RelationCount {
     pub count: u32,
 }
 
-#[derive(Component, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Component, Copy, Clone, Eq, PartialEq, Hash)]
 #[component(on_add = increment_relation_count)]
 pub struct Relationship {
     pub from: Entity,
     pub to: Entity,
 }
 
-#[derive(Component, Copy, Clone)]
+#[derive(Debug, Component, Copy, Clone)]
 pub struct Weight(pub f32);
 
 fn increment_relation_count(mut world: DeferredWorld, entity: Entity, _id: ComponentId) {
