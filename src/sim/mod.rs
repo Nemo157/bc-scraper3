@@ -46,6 +46,7 @@ pub struct MotionBundle {
     pub position: Position,
     pub velocity: Velocity,
     pub acceleration: Acceleration,
+    pinned: Pinned,
     relation_count: RelationCount,
 }
 
@@ -62,6 +63,7 @@ impl MotionBundle {
             position: Position(position),
             velocity: Velocity(velocity),
             acceleration: Acceleration(Vec2::ZERO),
+            pinned: Pinned::default(),
             relation_count: RelationCount::default(),
         }
     }
@@ -79,6 +81,7 @@ impl MotionBundle {
             position: Position(position),
             velocity: Velocity(velocity),
             acceleration: Acceleration(Vec2::ZERO),
+            pinned: Pinned::default(),
             relation_count: RelationCount::default(),
         }
     }

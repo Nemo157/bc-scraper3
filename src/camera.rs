@@ -4,7 +4,7 @@ use bevy::{
     ecs::{
         change_detection::{Res, ResMut},
         query::With,
-        system::{Commands, Query, Resource, Single},
+        system::{Commands, Resource, Single},
     },
     input::keyboard::KeyCode,
     input::{
@@ -57,9 +57,9 @@ fn drag(
     button: Res<ButtonInput<MouseButton>>,
     cursor: Res<Cursor>,
     mut transform: Single<&mut Transform, With<Camera>>,
-    dragged: Query<(), With<crate::ui::Dragged>>,
+    dragged: Res<crate::interact::Dragged>,
 ) {
-    if !dragged.is_empty() {
+    if dragged.0.is_some() {
         return;
     }
 

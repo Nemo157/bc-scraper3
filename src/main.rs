@@ -29,6 +29,7 @@ mod background;
 mod camera;
 mod data;
 mod diagnostic;
+mod interact;
 mod render;
 mod sim;
 mod ui;
@@ -98,9 +99,10 @@ fn main() -> eyre::Result<()> {
             self::camera::CameraPlugin,
             self::data::Plugin,
             self::diagnostic::Plugin,
+            self::interact::Plugin,
             self::render::Plugin,
             self::sim::SimPlugin,
-            self::ui::UiPlugin,
+            self::ui::Plugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (receive, keyinput))
