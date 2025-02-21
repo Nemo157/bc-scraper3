@@ -36,7 +36,7 @@ mod ui;
 
 use crate::{
     background::Response,
-    data::{AlbumId, ArtistId, UserId},
+    data::{ArtistId, ReleaseId, UserId},
     sim::{MotionBundle, PredictedPosition, Relationship},
 };
 
@@ -64,13 +64,16 @@ At least one option must be passed to select initial data
 "),
 )]
 struct Args {
-    #[arg(long("user"), value_name("username"))]
-    users: Vec<String>,
-    #[arg(long("album"), value_name("url"))]
-    albums: Vec<String>,
     #[arg(long("artist"), value_name("url"))]
     artists: Vec<String>,
-    #[arg(long, value_names(["albums", "artists", "users"]), num_args(3))]
+
+    #[arg(long("release"), value_name("url"))]
+    releases: Vec<String>,
+
+    #[arg(long("user"), value_name("username"))]
+    users: Vec<String>,
+
+    #[arg(long, value_names(["artists", "releases", "users"]), num_args(3))]
     random: Vec<u64>,
 }
 
@@ -117,9 +120,9 @@ fn setup(mut commands: Commands, args: Res<Args>, scraper: Res<background::Threa
         .spawn((Visibility::Visible, Transform::IDENTITY, RelationshipParent))
         .id();
 
-    for url in &args.albums {
+    for url in &args.releases {
         scraper
-            .send(background::Request::Album { url: url.clone() })
+            .send(background::Request::Release { url: url.clone() })
             .unwrap();
     }
 
@@ -137,15 +140,15 @@ fn setup(mut commands: Commands, args: Res<Args>, scraper: Res<background::Threa
             .unwrap();
     }
 
-    if let [albums, artists, users] = args.random[..] {
-        data::create_random(commands, relationship_parent, albums, artists, users);
+    if let [artists, releases, users] = args.random[..] {
+        data::create_random(commands, relationship_parent, artists, releases, users);
     }
 }
 
 #[derive(Resource, Default)]
 struct KnownEntities {
-    albums: HashMap<AlbumId, Entity>,
     artists: HashMap<ArtistId, Entity>,
+    releases: HashMap<ReleaseId, Entity>,
     users: HashMap<UserId, Entity>,
     relationships: HashMap<Relationship, Entity>,
 }
@@ -175,16 +178,6 @@ fn receive(
 ) {
     if let Some(response) = scraper.try_recv().unwrap() {
         match response {
-            Response::Album(album, details) => match known.albums.entry(album.id) {
-                Entry::Occupied(entry) => {
-                    commands.entity(*entry.get()).insert(details);
-                }
-                Entry::Vacant(entry) => {
-                    let motion = MotionBundle::random();
-                    entry.insert(commands.spawn((album, motion, details)).id());
-                }
-            },
-
             Response::Artist(artist, details) => match known.artists.entry(artist.id) {
                 Entry::Occupied(entry) => {
                     commands.entity(*entry.get()).insert(details);
@@ -192,6 +185,16 @@ fn receive(
                 Entry::Vacant(entry) => {
                     let motion = MotionBundle::random();
                     entry.insert(commands.spawn((artist, motion, details)).id());
+                }
+            },
+
+            Response::Release(release, details) => match known.releases.entry(release.id) {
+                Entry::Occupied(entry) => {
+                    commands.entity(*entry.get()).insert(details);
+                }
+                Entry::Vacant(entry) => {
+                    let motion = MotionBundle::random();
+                    entry.insert(commands.spawn((release, motion, details)).id());
                 }
             },
 
@@ -205,19 +208,19 @@ fn receive(
                 }
             },
 
-            Response::Fans(album, users) => {
-                let (album, position) = match known.albums.entry(album.id) {
+            Response::Fans(release, users) => {
+                let (release, position) = match known.releases.entry(release.id) {
                     Entry::Occupied(entry) => {
-                        let album = *entry.get();
-                        let position = *positions.get(album).unwrap();
-                        (album, position.0)
+                        let release = *entry.get();
+                        let position = *positions.get(release).unwrap();
+                        (release, position.0)
                     }
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
-                        let album = commands.spawn((album, motion)).id();
-                        entry.insert(album);
-                        (album, position.0)
+                        let release = commands.spawn((release, motion)).id();
+                        entry.insert(release);
+                        (release, position.0)
                     }
                 };
                 for user in users {
@@ -228,7 +231,7 @@ fn receive(
                     });
                     let relationship = Relationship {
                         from: user,
-                        to: album,
+                        to: release,
                     };
                     known.relationships.entry(relationship).or_insert_with(|| {
                         commands
@@ -239,19 +242,19 @@ fn receive(
                 }
             }
 
-            Response::AlbumArtist(album, artist) => {
-                let (album, position) = match known.albums.entry(album.id) {
+            Response::ReleaseArtist(release, artist) => {
+                let (release, position) = match known.releases.entry(release.id) {
                     Entry::Occupied(entry) => {
-                        let album = *entry.get();
-                        let position = *positions.get(album).unwrap();
-                        (album, position.0)
+                        let release = *entry.get();
+                        let position = *positions.get(release).unwrap();
+                        (release, position.0)
                     }
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
-                        let album = commands.spawn((album, motion)).id();
-                        entry.insert(album);
-                        (album, position.0)
+                        let release = commands.spawn((release, motion)).id();
+                        entry.insert(release);
+                        (release, position.0)
                     }
                 };
                 let artist = *known.artists.entry(artist.id).or_insert_with(|| {
@@ -261,7 +264,7 @@ fn receive(
                 });
                 let relationship = Relationship {
                     from: artist,
-                    to: album,
+                    to: release,
                 };
                 known.relationships.entry(relationship).or_insert_with(|| {
                     commands
@@ -271,7 +274,7 @@ fn receive(
                 });
             }
 
-            Response::Releases(artist, albums) => {
+            Response::Releases(artist, releases) => {
                 let (artist, position) = match known.artists.entry(artist.id) {
                     Entry::Occupied(entry) => {
                         let artist = *entry.get();
@@ -286,15 +289,15 @@ fn receive(
                         (artist, position.0)
                     }
                 };
-                for album in albums {
-                    let album = *known.albums.entry(album.id).or_insert_with(|| {
+                for release in releases {
+                    let release = *known.releases.entry(release.id).or_insert_with(|| {
                         commands
-                            .spawn((album, MotionBundle::random_near(position)))
+                            .spawn((release, MotionBundle::random_near(position)))
                             .id()
                     });
                     let relationship = Relationship {
                         from: artist,
-                        to: album,
+                        to: release,
                     };
                     known.relationships.entry(relationship).or_insert_with(|| {
                         commands
@@ -305,7 +308,7 @@ fn receive(
                 }
             }
 
-            Response::Collection(user, albums) => {
+            Response::Collection(user, releases) => {
                 let (user, position) = match known.users.entry(user.id) {
                     Entry::Occupied(entry) => {
                         let user = *entry.get();
@@ -320,15 +323,15 @@ fn receive(
                         (user, position.0)
                     }
                 };
-                for album in albums {
-                    let album = *known.albums.entry(album.id).or_insert_with(|| {
+                for release in releases {
+                    let release = *known.releases.entry(release.id).or_insert_with(|| {
                         commands
-                            .spawn((album, MotionBundle::random_near(position)))
+                            .spawn((release, MotionBundle::random_near(position)))
                             .id()
                     });
                     let relationship = Relationship {
                         from: user,
-                        to: album,
+                        to: release,
                     };
                     known.relationships.entry(relationship).or_insert_with(|| {
                         commands

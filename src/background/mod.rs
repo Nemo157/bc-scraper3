@@ -1,4 +1,4 @@
-use crate::data::{Album, AlbumDetails, Artist, ArtistDetails, User, UserDetails};
+use crate::data::{Artist, ArtistDetails, Release, ReleaseDetails, User, UserDetails};
 use crossbeam::channel::{Receiver, SendError, Sender, TryRecvError};
 use std::{cell::RefCell, path::Path};
 use url::Url;
@@ -8,20 +8,21 @@ mod web;
 
 #[derive(Debug)]
 pub enum Request {
-    User { url: String },
-    Album { url: String },
     Artist { url: String },
+    Release { url: String },
+    User { url: String },
 }
 
 #[derive(Debug)]
 pub enum Response {
-    User(User, UserDetails),
-    Album(Album, AlbumDetails),
     Artist(Artist, ArtistDetails),
-    Fans(Album, Vec<User>),
-    AlbumArtist(Album, Artist),
-    Collection(User, Vec<Album>),
-    Releases(Artist, Vec<Album>),
+    Release(Release, ReleaseDetails),
+    User(User, UserDetails),
+
+    Fans(Release, Vec<User>),
+    ReleaseArtist(Release, Artist),
+    Collection(User, Vec<Release>),
+    Releases(Artist, Vec<Release>),
 }
 
 #[derive(Debug, bevy::ecs::system::Resource)]
@@ -108,6 +109,53 @@ impl Background {
     #[tracing::instrument(skip(self))]
     fn handle_request(&self, request: Request) -> eyre::Result<()> {
         match request {
+            Request::Artist { url } => {
+                let artist = RefCell::new(None);
+                self.scraper.scrape_artist(
+                    &Url::parse(&url)?,
+                    |new_artist, details| {
+                        artist.replace(Some((new_artist, details)));
+                        Ok(())
+                    },
+                    |releases| {
+                        self.scraped.send(Response::Releases(
+                            artist.borrow().as_ref().unwrap().0.clone(),
+                            releases,
+                        ))?;
+                        Ok(())
+                    },
+                )?;
+                let (artist, details) = artist.replace(None).take().unwrap();
+                self.scraped.send(Response::Artist(artist, details))?;
+            }
+
+            Request::Release { url } => {
+                let release = RefCell::new(None);
+                self.scraper.scrape_release(
+                    &Url::parse(&url)?,
+                    |new_release, details| {
+                        release.replace(Some((new_release, details)));
+                        Ok(())
+                    },
+                    |artist| {
+                        self.scraped.send(Response::ReleaseArtist(
+                            release.borrow().as_ref().unwrap().0.clone(),
+                            artist,
+                        ))?;
+                        Ok(())
+                    },
+                    |fans| {
+                        self.scraped.send(Response::Fans(
+                            release.borrow().as_ref().unwrap().0.clone(),
+                            fans,
+                        ))?;
+                        Ok(())
+                    },
+                )?;
+                let (release, details) = release.replace(None).take().unwrap();
+                self.scraped.send(Response::Release(release, details))?;
+            }
+
             Request::User { url } => {
                 let user = RefCell::new(None);
                 self.scraper.scrape_fan(
@@ -126,51 +174,6 @@ impl Background {
                 )?;
                 let (user, details) = user.replace(None).take().unwrap();
                 self.scraped.send(Response::User(user, details))?;
-            }
-            Request::Album { url } => {
-                let album = RefCell::new(None);
-                self.scraper.scrape_album(
-                    &Url::parse(&url)?,
-                    |new_album, details| {
-                        album.replace(Some((new_album, details)));
-                        Ok(())
-                    },
-                    |artist| {
-                        self.scraped.send(Response::AlbumArtist(
-                            album.borrow().as_ref().unwrap().0.clone(),
-                            artist,
-                        ))?;
-                        Ok(())
-                    },
-                    |fans| {
-                        self.scraped.send(Response::Fans(
-                            album.borrow().as_ref().unwrap().0.clone(),
-                            fans,
-                        ))?;
-                        Ok(())
-                    },
-                )?;
-                let (album, details) = album.replace(None).take().unwrap();
-                self.scraped.send(Response::Album(album, details))?;
-            }
-            Request::Artist { url } => {
-                let artist = RefCell::new(None);
-                self.scraper.scrape_artist(
-                    &Url::parse(&url)?,
-                    |new_artist, details| {
-                        artist.replace(Some((new_artist, details)));
-                        Ok(())
-                    },
-                    |albums| {
-                        self.scraped.send(Response::Releases(
-                            artist.borrow().as_ref().unwrap().0.clone(),
-                            albums,
-                        ))?;
-                        Ok(())
-                    },
-                )?;
-                let (artist, details) = artist.replace(None).take().unwrap();
-                self.scraped.send(Response::Artist(artist, details))?;
             }
         }
     }

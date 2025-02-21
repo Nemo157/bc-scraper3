@@ -16,7 +16,7 @@ use bevy::{
 };
 
 use crate::{
-    data::{AlbumId, ArtistId, UserId},
+    data::{ArtistId, ReleaseId, UserId},
     sim::{Paused, PredictedPosition, Relationship},
     RelationshipParent,
 };
@@ -26,14 +26,15 @@ use std::time::Instant;
 mod diagnostic;
 mod nearest;
 
-static ALBUM_MESH_HANDLE: Handle<Mesh> = Handle::weak_from_u128(0xe7233fda8e904a2f8cff6638b3bc5e7f);
-static ALBUM_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
-    Handle::weak_from_u128(0x3d3b3dfff39b42a39e7af2d5f1f80ad6);
-
 static ARTIST_MESH_HANDLE: Handle<Mesh> =
     Handle::weak_from_u128(0x3fc46e8efa014a19808ae833b2a2b5bd);
 static ARTIST_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
     Handle::weak_from_u128(0x7253624dfd34415b9a309cc0c289fe6f);
+
+static RELEASE_MESH_HANDLE: Handle<Mesh> =
+    Handle::weak_from_u128(0xe7233fda8e904a2f8cff6638b3bc5e7f);
+static RELEASE_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
+    Handle::weak_from_u128(0x3d3b3dfff39b42a39e7af2d5f1f80ad6);
 
 static USER_MESH_HANDLE: Handle<Mesh> = Handle::weak_from_u128(0x48daf856c5c742eeaf609e4ad20bc5fc);
 static USER_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
@@ -69,16 +70,16 @@ pub fn setup_meshes(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    meshes.insert(&ALBUM_MESH_HANDLE, Circle::new(10.0).into());
-    materials.insert(
-        &ALBUM_COLOR_MATERIAL_HANDLE,
-        Color::hsl(0., 0.95, 0.7).into(),
-    );
-
     meshes.insert(&ARTIST_MESH_HANDLE, Annulus::new(10.0, 6.0).into());
     materials.insert(
         &ARTIST_COLOR_MATERIAL_HANDLE,
         Color::hsl(270., 0.95, 0.7).into(),
+    );
+
+    meshes.insert(&RELEASE_MESH_HANDLE, Circle::new(10.0).into());
+    materials.insert(
+        &RELEASE_COLOR_MATERIAL_HANDLE,
+        Color::hsl(0., 0.95, 0.7).into(),
     );
 
     meshes.insert(&USER_MESH_HANDLE, Rectangle::new(10.0, 10.0).into());
@@ -95,23 +96,23 @@ pub fn setup_meshes(
 }
 
 fn init_meshes(
-    albums: Query<Entity, (With<AlbumId>, Without<Mesh2d>)>,
     artists: Query<Entity, (With<ArtistId>, Without<Mesh2d>)>,
+    releases: Query<Entity, (With<ReleaseId>, Without<Mesh2d>)>,
     users: Query<Entity, (With<UserId>, Without<Mesh2d>)>,
     relationships: Query<Entity, (With<Relationship>, Without<Mesh2d>)>,
     mut commands: Commands,
 ) {
-    for entity in &albums {
-        commands.entity(entity).insert((
-            Mesh2d(ALBUM_MESH_HANDLE.clone()),
-            MeshMaterial2d(ALBUM_COLOR_MATERIAL_HANDLE.clone()),
-        ));
-    }
-
     for entity in &artists {
         commands.entity(entity).insert((
             Mesh2d(ARTIST_MESH_HANDLE.clone()),
             MeshMaterial2d(ARTIST_COLOR_MATERIAL_HANDLE.clone()),
+        ));
+    }
+
+    for entity in &releases {
+        commands.entity(entity).insert((
+            Mesh2d(RELEASE_MESH_HANDLE.clone()),
+            MeshMaterial2d(RELEASE_COLOR_MATERIAL_HANDLE.clone()),
         ));
     }
 

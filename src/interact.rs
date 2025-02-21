@@ -167,8 +167,8 @@ fn pointer_click(
 ) {
     if trigger.duration.as_millis() < 100 {
         let request = |entity| match data.get(entity) {
-            Ok((Url(url), EntityType::Album)) => {
-                scraper.send(Request::Album { url: url.clone() }).unwrap();
+            Ok((Url(url), EntityType::Release)) => {
+                scraper.send(Request::Release { url: url.clone() }).unwrap();
             }
             Ok((Url(url), EntityType::Artist)) => {
                 scraper.send(Request::Artist { url: url.clone() }).unwrap();

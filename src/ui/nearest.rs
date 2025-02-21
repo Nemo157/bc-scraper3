@@ -18,7 +18,7 @@ use bevy::{
 };
 
 use crate::{
-    data::{AlbumDetails, ArtistDetails, EntityType, Url, UserDetails},
+    data::{ArtistDetails, EntityType, ReleaseDetails, Url, UserDetails},
     interact::Nearest,
 };
 
@@ -56,8 +56,8 @@ fn setup(mut commands: Commands) {
 struct NodeDetails {
     ty: &'static EntityType,
     url: &'static Url,
-    album: Option<&'static AlbumDetails>,
     artist: Option<&'static ArtistDetails>,
+    release: Option<&'static ReleaseDetails>,
     user: Option<&'static UserDetails>,
 }
 
@@ -78,17 +78,18 @@ fn update(
         };
 
         commands.entity(*ui).with_children(|ui| {
-            if let Some(album) = details.album {
-                let AlbumDetails {
+            if let Some(release) = details.release {
+                let ReleaseDetails {
                     title,
                     artist,
                     tracks,
                     length,
                     released,
-                } = album;
+                    ty,
+                } = release;
 
                 ui.spawn((
-                    Text::new(format!("Album: {title}")),
+                    Text::new(format!("{ty:?}: {title}")),
                     TextFont::default(),
                     Label,
                     PickingBehavior::IGNORE,
@@ -102,7 +103,11 @@ fn update(
                 ));
 
                 ui.spawn((
-                    Text::new(format!("{tracks} tracks | {length:?}")),
+                    Text::new(if let Some(tracks) = tracks {
+                        format!("{tracks} tracks | {length:?}")
+                    } else {
+                        format!("{length:?}")
+                    }),
                     TextFont::default(),
                     Label,
                     PickingBehavior::IGNORE,

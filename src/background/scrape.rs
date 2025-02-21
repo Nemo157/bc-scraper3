@@ -1,5 +1,6 @@
 use crate::data::{
-    Album, AlbumDetails, AlbumId, Artist, ArtistDetails, ArtistId, User, UserDetails, UserId,
+    Artist, ArtistDetails, ArtistId, Release, ReleaseDetails, ReleaseId, ReleaseType, User,
+    UserDetails, UserId,
 };
 use std::collections::HashMap;
 use url::Url;
@@ -63,12 +64,12 @@ impl ScraperExt for scraper::ElementRef<'_> {
 }
 
 #[derive(Debug)]
-struct AlbumPage {
+struct ReleasePage {
     properties: Properties,
     data_band: DataBand,
     collectors: Collectors,
     discography: String,
-    ld_data: AlbumLdData,
+    ld_data: ReleaseLdData,
 }
 
 fn parse_rfc2822_date<'de, D>(deserializer: D) -> Result<jiff::Zoned, D::Error>
@@ -124,13 +125,17 @@ where
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct AlbumLdData {
+struct BrokenDuration(#[serde(deserialize_with = "parse_broken_duration")] jiff::SignedDuration);
+
+#[derive(Debug, serde::Deserialize)]
+struct ReleaseLdData {
     #[serde(rename = "datePublished", deserialize_with = "parse_rfc2822_date")]
     date_published: jiff::Zoned,
     #[serde(rename = "byArtist")]
     by_artist: ByArtist,
     name: String,
-    track: ItemList<Track>,
+    track: Option<ItemList<Track>>,
+    duration: Option<BrokenDuration>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -153,8 +158,7 @@ struct ItemListElement<T> {
 
 #[derive(Debug, serde::Deserialize)]
 struct Track {
-    #[serde(deserialize_with = "parse_broken_duration")]
-    duration: jiff::SignedDuration,
+    duration: BrokenDuration,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -271,39 +275,50 @@ impl Scraper {
     }
 
     #[culpa::try_fn]
-    #[tracing::instrument(skip(self, on_album, on_album_artist, on_fans), fields(%url))]
-    pub(crate) fn scrape_album(
+    #[tracing::instrument(skip(self, on_release, on_release_artist, on_fans), fields(%url))]
+    pub(crate) fn scrape_release(
         &self,
         url: &Url,
-        on_album: impl FnOnce(Album, AlbumDetails) -> eyre::Result<()>,
-        on_album_artist: impl FnOnce(Artist) -> eyre::Result<()>,
+        on_release: impl FnOnce(Release, ReleaseDetails) -> eyre::Result<()>,
+        on_release_artist: impl FnOnce(Artist) -> eyre::Result<()>,
         mut on_fans: impl FnMut(Vec<User>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
-        let page = self.scrape_album_page(url)?;
+        let page = self.scrape_release_page(url)?;
 
         let mut more_available = page.collectors.more_thumbs_available;
-        on_album(
-            Album {
-                id: AlbumId(page.properties.item_id),
+        on_release(
+            Release {
+                id: ReleaseId(page.properties.item_id),
                 url: url.into(),
             },
-            AlbumDetails {
+            ReleaseDetails {
+                ty: match page.properties.item_type.as_str() {
+                    "a" => ReleaseType::Album,
+                    "t" => ReleaseType::Track,
+                    other => Err(eyre::eyre!("unknown release type {other}"))?,
+                },
                 title: page.ld_data.name,
                 artist: page.ld_data.by_artist.name,
-                tracks: page.ld_data.track.length,
+                tracks: page.ld_data.track.as_ref().map(|track| track.length),
                 length: page
                     .ld_data
-                    .track
-                    .elements
-                    .iter()
-                    .map(|el| el.item.duration)
-                    .reduce(|a, b| a + b)
+                    .duration
+                    .map(|d| d.0)
+                    .or_else(|| {
+                        page.ld_data.track.and_then(|track| {
+                            track
+                                .elements
+                                .iter()
+                                .map(|el| el.item.duration.0)
+                                .reduce(|a, b| a + b)
+                        })
+                    })
                     .unwrap_or_default(),
                 released: page.ld_data.date_published.round(jiff::Unit::Day)?,
             },
         )?;
 
-        on_album_artist(Artist {
+        on_release_artist(Artist {
             id: ArtistId(page.data_band.id),
             url: url.join(&page.discography)?.into(),
         })?;
@@ -359,7 +374,7 @@ impl Scraper {
         &self,
         url: &Url,
         on_fan: impl FnOnce(User, UserDetails) -> eyre::Result<()>,
-        mut on_collection: impl FnMut(Vec<Album>) -> eyre::Result<()>,
+        mut on_collection: impl FnMut(Vec<Release>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
         let mut page = self.scrape_fan_page(url)?;
 
@@ -387,8 +402,8 @@ impl Scraper {
         on_collection(
             items
                 .into_iter()
-                .map(|item| Album {
-                    id: AlbumId(item.item_id),
+                .map(|item| Release {
+                    id: ReleaseId(item.item_id),
                     url: item.item_url.into(),
                 })
                 .collect(),
@@ -402,8 +417,8 @@ impl Scraper {
                 response
                     .items
                     .into_iter()
-                    .map(|item| Album {
-                        id: AlbumId(item.item_id),
+                    .map(|item| Release {
+                        id: ReleaseId(item.item_id),
                         url: item.item_url.into(),
                     })
                     .collect(),
@@ -417,7 +432,7 @@ impl Scraper {
         &self,
         url: &Url,
         on_artist: impl FnOnce(Artist, ArtistDetails) -> eyre::Result<()>,
-        mut on_releases: impl FnMut(Vec<Album>) -> eyre::Result<()>,
+        mut on_releases: impl FnMut(Vec<Release>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
         let page = self.scrape_artist_page(url)?;
 
@@ -433,8 +448,8 @@ impl Scraper {
 
         on_releases(eyre::Result::<Vec<_>, _>::from_iter(
             page.music_grid_items.into_iter().map(|item| {
-                eyre::Result::<_>::Ok(Album {
-                    id: AlbumId(item.item_id),
+                eyre::Result::<_>::Ok(Release {
+                    id: ReleaseId(item.item_id),
                     url: url.join(&item.href)?.into(),
                 })
             }),
@@ -442,8 +457,8 @@ impl Scraper {
 
         on_releases(eyre::Result::<Vec<_>, _>::from_iter(
             page.client_items.into_iter().flatten().map(|item| {
-                eyre::Result::<_>::Ok(Album {
-                    id: AlbumId(item.id),
+                eyre::Result::<_>::Ok(Release {
+                    id: ReleaseId(item.id),
                     url: url.join(&item.page_url)?.into(),
                 })
             }),
@@ -452,7 +467,7 @@ impl Scraper {
 
     #[culpa::try_fn]
     #[tracing::instrument(skip(self), fields(%url))]
-    fn scrape_album_page(&self, url: &Url) -> eyre::Result<AlbumPage> {
+    fn scrape_release_page(&self, url: &Url) -> eyre::Result<ReleasePage> {
         let data = self.client.get(url)?;
         let document = scraper::Html::parse_document(&data);
 
@@ -490,7 +505,7 @@ impl Scraper {
             .collect::<String>()
             .parse_json()?;
 
-        AlbumPage {
+        ReleasePage {
             properties,
             data_band,
             collectors,

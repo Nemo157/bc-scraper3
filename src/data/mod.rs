@@ -41,30 +41,9 @@ impl From<&url::Url> for Url {
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
 pub enum EntityType {
-    Album,
     Artist,
+    Release,
     User,
-}
-
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
-#[require(EntityType(|| EntityType::Album))]
-pub struct AlbumId(pub u64);
-
-#[derive(Clone, Debug, Component)]
-pub struct AlbumDetails {
-    pub title: String,
-    /// This is the _album artist_ which may not be the same name as the artist that owns the store
-    /// which released the album (e.g. record labels, or featured artists).
-    pub artist: String,
-    pub tracks: u32,
-    pub length: jiff::SignedDuration,
-    pub released: jiff::Zoned,
-}
-
-#[derive(Debug, Clone, Bundle)]
-pub struct Album {
-    pub id: AlbumId,
-    pub url: Url,
 }
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
@@ -79,6 +58,34 @@ pub struct ArtistDetails {
 #[derive(Debug, Clone, Bundle)]
 pub struct Artist {
     pub id: ArtistId,
+    pub url: Url,
+}
+
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::Release))]
+pub struct ReleaseId(pub u64);
+
+#[derive(Copy, Clone, Debug)]
+pub enum ReleaseType {
+    Album,
+    Track,
+}
+
+#[derive(Clone, Debug, Component)]
+pub struct ReleaseDetails {
+    pub ty: ReleaseType,
+    pub title: String,
+    /// This is the _album artist_ which may not be the same name as the artist that owns the store
+    /// which released the release (e.g. record labels, or featured artists).
+    pub artist: String,
+    pub tracks: Option<u32>,
+    pub length: jiff::SignedDuration,
+    pub released: jiff::Zoned,
+}
+
+#[derive(Debug, Clone, Bundle)]
+pub struct Release {
+    pub id: ReleaseId,
     pub url: Url,
 }
 
@@ -128,18 +135,18 @@ impl bevy::app::Plugin for Plugin {
 pub fn create_random(
     mut commands: Commands,
     relationship_parent: Entity,
-    albums: u64,
     artists: u64,
+    releases: u64,
     users: u64,
 ) {
     let mut rng = rand::rng();
 
-    let albums = Vec::from_iter((0..albums).map(|i| {
+    let releases = Vec::from_iter((0..releases).map(|i| {
         commands
             .spawn((
-                Album {
-                    id: AlbumId(i),
-                    url: format!("rand:album:{i}").into(),
+                Release {
+                    id: ReleaseId(i),
+                    url: format!("rand:release:{i}").into(),
                 },
                 MotionBundle::random(),
             ))
@@ -170,13 +177,13 @@ pub fn create_random(
             .id()
     }));
 
-    let mut user_albums = albums.clone();
-    let mut user_linked_albums = Vec::new();
+    let mut user_releases = releases.clone();
+    let mut user_linked_releases = Vec::new();
 
     for from in &users {
         let count: f64 = Poisson::new(20.0).unwrap().sample(&mut rng);
-        for to in user_albums.drain(..(count as usize).min(user_albums.len())) {
-            user_linked_albums.push(to);
+        for to in user_releases.drain(..(count as usize).min(user_releases.len())) {
+            user_linked_releases.push(to);
             commands
                 .entity(relationship_parent)
                 .with_child(Relationship { from: *from, to }.bundle(1.0));
@@ -185,7 +192,7 @@ pub fn create_random(
 
     for from in &users {
         let count: f64 = Poisson::new(3.0).unwrap().sample(&mut rng);
-        for to in user_linked_albums.choose_multiple(&mut rng, count as usize) {
+        for to in user_linked_releases.choose_multiple(&mut rng, count as usize) {
             commands.entity(relationship_parent).with_child(
                 Relationship {
                     from: *from,
@@ -196,7 +203,7 @@ pub fn create_random(
         }
     }
 
-    for to in &user_albums {
+    for to in &user_releases {
         let from = users.choose(&mut rng).unwrap();
         commands.entity(relationship_parent).with_child(
             Relationship {
@@ -207,17 +214,17 @@ pub fn create_random(
         );
     }
 
-    let mut artist_albums = albums.clone();
+    let mut artist_releases = releases.clone();
 
     for from in &artists {
-        let index = rng.random_range(0..artist_albums.len());
-        let to = artist_albums.swap_remove(index);
+        let index = rng.random_range(0..artist_releases.len());
+        let to = artist_releases.swap_remove(index);
         commands
             .entity(relationship_parent)
             .with_child(Relationship { from: *from, to }.bundle(1.0));
     }
 
-    for to in &artist_albums {
+    for to in &artist_releases {
         let from = artists.choose(&mut rng).unwrap();
         commands.entity(relationship_parent).with_child(
             Relationship {
