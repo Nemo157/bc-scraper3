@@ -3,10 +3,11 @@ use bevy::{
     ecs::{
         change_detection::DetectChanges,
         component::Component,
-        query::With,
+        entity::Entity,
+        query::{QueryData, With},
         system::{Commands, Query, Res, Single},
     },
-    hierarchy::{BuildChildren, ChildBuild},
+    hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt},
     picking::PickingBehavior,
     text::TextFont,
     ui::widget::{Label, Text},
@@ -16,7 +17,10 @@ use bevy::{
     },
 };
 
-use crate::{data::Url, interact::Hovered};
+use crate::{
+    data::{EntityType, Url},
+    interact::Hovered,
+};
 
 pub struct Plugin;
 
@@ -28,47 +32,60 @@ impl bevy::app::Plugin for Plugin {
 }
 
 #[derive(Default, Component)]
-pub struct NodeDetails;
+struct NodeUi;
 
 fn setup(mut commands: Commands) {
-    commands
-        .spawn((
-            Node {
-                display: Display::Flex,
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Start,
-                align_items: AlignItems::Start,
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.),
-                top: Val::Px(0.),
-                ..Node::default()
-            },
-            BackgroundColor(Color::srgba(0.10, 0.10, 0.10, 0.98)),
-            PickingBehavior::IGNORE,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new("Hovered Entity"),
+    commands.spawn((
+        Node {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            justify_content: JustifyContent::Start,
+            align_items: AlignItems::Start,
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.),
+            top: Val::Px(0.),
+            ..Node::default()
+        },
+        BackgroundColor(Color::srgba(0.10, 0.10, 0.10, 0.98)),
+        PickingBehavior::IGNORE,
+        NodeUi,
+    ));
+}
+
+#[derive(QueryData)]
+struct NodeDetails {
+    ty: &'static EntityType,
+    url: &'static Url,
+}
+
+fn update(
+    hovered: Res<Hovered>,
+    details: Query<NodeDetails>,
+    ui: Single<Entity, With<NodeUi>>,
+    mut commands: Commands,
+) {
+    if hovered.is_changed() {
+        commands.entity(*ui).despawn_descendants();
+
+        let Some(details) = hovered.0.and_then(|entity| details.get(entity).ok()) else {
+            // nothing to show
+            return;
+        };
+
+        commands.entity(*ui).with_children(|ui| {
+            ui.spawn((
+                Text::new(format!("Hovered {:?}", &details.ty)),
                 TextFont::default().with_font_size(21.0),
                 Label,
                 PickingBehavior::IGNORE,
             ));
-            parent.spawn((
-                Text::default(),
+
+            ui.spawn((
+                Text::new(&details.url.0),
                 TextFont::default(),
                 Label,
-                NodeDetails,
                 PickingBehavior::IGNORE,
             ));
         });
-}
-
-fn update(hovered: Res<Hovered>, url: Query<&Url>, mut span: Single<&mut Text, With<NodeDetails>>) {
-    if hovered.is_changed() {
-        if let Some(url) = hovered.0.and_then(|entity| url.get(entity).ok()) {
-            ***span = url.0.clone();
-        } else {
-            ***span = "".into();
-        }
     }
 }
