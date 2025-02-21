@@ -19,9 +19,10 @@ use bevy::{
 };
 
 #[derive(Default, Resource)]
-struct Cursor {
-    position: Vec2,
-    delta: Vec2,
+pub struct Cursor {
+    pub screen_delta: Vec2,
+    pub screen_position: Vec2,
+    pub world_position: Vec2,
 }
 
 pub struct CameraPlugin;
@@ -43,14 +44,22 @@ fn setup(mut commands: Commands) {
 fn update_cursor_position(
     mut cursor: ResMut<Cursor>,
     window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&GlobalTransform, &Camera), ()>,
 ) {
-    let Some(position) = window.cursor_position() else {
+    let Some(screen_position) = window.cursor_position() else {
+        return;
+    };
+
+    let (global_transform, camera) = camera.into_inner();
+
+    let Ok(world_position) = camera.viewport_to_world_2d(&global_transform, screen_position) else {
         return;
     };
 
     // Can't use `AccumulatedMouseMotion` because that has truncation issues.
-    cursor.delta = cursor.position - position;
-    cursor.position = position;
+    cursor.screen_delta = cursor.screen_position - screen_position;
+    cursor.screen_position = screen_position;
+    cursor.world_position = world_position;
 }
 
 fn drag(
@@ -64,7 +73,7 @@ fn drag(
     }
 
     if button.pressed(MouseButton::Left) && !button.just_pressed(MouseButton::Left) {
-        let mut delta = cursor.delta * transform.scale.x;
+        let mut delta = cursor.screen_delta * transform.scale.x;
         delta.y *= -1.0;
         transform.translation += delta.extend(0.0);
     }
@@ -74,7 +83,7 @@ fn zoom(
     scroll: Res<AccumulatedMouseScroll>,
     keyboard: Res<ButtonInput<KeyCode>>,
     cursor: Res<Cursor>,
-    camera: Single<(&mut Transform, &GlobalTransform, &Camera), ()>,
+    mut transform: Single<&mut Transform, With<Camera>>,
     mut time: ResMut<Time<Virtual>>,
 ) {
     if keyboard.pressed(KeyCode::ShiftLeft) {
@@ -87,12 +96,7 @@ fn zoom(
         return;
     }
 
-    let (mut transform, global_transform, camera) = camera.into_inner();
-
-    let Ok(position) = camera.viewport_to_world_2d(&global_transform, cursor.position) else {
-        return;
-    };
-    let position = position.extend(0.0);
+    let position = cursor.world_position.extend(0.0);
 
     // TODO: Handle trackpads nicely
     if scroll.unit == MouseScrollUnit::Line && scroll.delta.y != 0.0 {

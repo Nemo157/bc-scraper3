@@ -25,6 +25,7 @@ use crate::{
 use std::time::Instant;
 
 mod diagnostic;
+mod nearest;
 
 static ALBUM_MESH_HANDLE: Handle<Mesh> = Handle::weak_from_u128(0xe7233fda8e904a2f8cff6638b3bc5e7f);
 static ALBUM_COLOR_MATERIAL_HANDLE: Handle<ColorMaterial> =
@@ -61,6 +62,7 @@ impl bevy::app::Plugin for Plugin {
         );
 
         app.add_plugins(self::diagnostic::Plugin);
+        app.add_plugins(self::nearest::Plugin);
     }
 }
 

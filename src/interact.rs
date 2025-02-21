@@ -1,20 +1,24 @@
 use bevy::{
     ecs::{
+        change_detection::DetectChangesMut,
         entity::Entity,
         observer::Trigger,
         query::{With, Without},
         system::{Query, Res, ResMut, Resource, Single},
     },
     input::{keyboard::KeyCode, ButtonInput},
+    math::Vec2,
     picking::events::{Click, Down, Drag, Out, Over, Pointer, Up},
     render::camera::Camera,
+    time::{Fixed, Time},
     transform::components::Transform,
 };
 
 use crate::{
     background::Request,
+    camera::Cursor,
     data::{EntityType, Url},
-    sim::{Pinned, Relationship},
+    sim::{Pinned, Position, Relationship, Velocity},
 };
 
 #[derive(Default, Resource)]
@@ -23,12 +27,21 @@ pub struct Dragged(pub Option<Entity>);
 #[derive(Default, Resource)]
 pub struct Hovered(pub Option<Entity>);
 
+#[derive(Default, Resource, PartialEq)]
+pub struct Nearest {
+    pub entity: Option<Entity>,
+    pub position: Option<Vec2>,
+}
+
 pub struct Plugin;
 
 impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.init_resource::<Dragged>();
         app.init_resource::<Hovered>();
+        app.init_resource::<Nearest>();
+
+        app.add_systems(bevy::app::PreUpdate, update_nearest);
 
         app.add_observer(pointer_down);
         app.add_observer(pointer_drag);
@@ -37,6 +50,33 @@ impl bevy::app::Plugin for Plugin {
         app.add_observer(pointer_over);
         app.add_observer(pointer_out);
     }
+}
+
+fn update_nearest(
+    cursor: Res<Cursor>,
+    positions: Query<(Entity, &Position, &Velocity)>,
+    time: Res<Time<Fixed>>,
+    mut nearest: ResMut<Nearest>,
+) {
+    let Some((entity, position)) = positions
+        .iter()
+        .map(|(entity, position, velocity)| {
+            (entity, position.0 + velocity.0 * time.overstep_fraction())
+        })
+        .min_by_key(|(_, position)| {
+            // positive floats have the same order when viewed as bits
+            (position - cursor.world_position)
+                .length_squared()
+                .to_bits()
+        })
+    else {
+        return;
+    };
+
+    nearest.set_if_neq(Nearest {
+        entity: Some(entity),
+        position: Some(position),
+    });
 }
 
 fn pointer_down(

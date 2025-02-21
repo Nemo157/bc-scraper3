@@ -19,7 +19,7 @@ use bevy::{
 
 use crate::{
     data::{EntityType, Url},
-    interact::Hovered,
+    interact::Nearest,
 };
 
 pub struct Plugin;
@@ -59,22 +59,22 @@ struct NodeDetails {
 }
 
 fn update(
-    hovered: Res<Hovered>,
+    nearest: Res<Nearest>,
     details: Query<NodeDetails>,
     ui: Single<Entity, With<NodeUi>>,
     mut commands: Commands,
 ) {
-    if hovered.is_changed() {
+    if nearest.is_changed() {
         commands.entity(*ui).despawn_descendants();
 
-        let Some(details) = hovered.0.and_then(|entity| details.get(entity).ok()) else {
+        let Some(details) = nearest.entity.and_then(|entity| details.get(entity).ok()) else {
             // nothing to show
             return;
         };
 
         commands.entity(*ui).with_children(|ui| {
             ui.spawn((
-                Text::new(format!("Hovered {:?}", &details.ty)),
+                Text::new(format!("{:?}", &details.ty)),
                 TextFont::default().with_font_size(21.0),
                 Label,
                 PickingBehavior::IGNORE,
