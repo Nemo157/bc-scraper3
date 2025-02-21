@@ -59,15 +59,17 @@ struct NodeDetails {
 }
 
 fn update(
-    nearest: Res<Nearest>,
+    nearest: Option<Res<Nearest>>,
     details: Query<NodeDetails>,
     ui: Single<Entity, With<NodeUi>>,
     mut commands: Commands,
 ) {
+    let Some(nearest) = nearest else { return };
+
     if nearest.is_changed() {
         commands.entity(*ui).despawn_descendants();
 
-        let Some(details) = nearest.entity.and_then(|entity| details.get(entity).ok()) else {
+        let Ok(details) = details.get(nearest.entity) else {
             // nothing to show
             return;
         };

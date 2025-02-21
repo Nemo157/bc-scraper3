@@ -37,7 +37,7 @@ mod ui;
 use crate::{
     background::Response,
     data::{AlbumId, ArtistId, UserId},
-    sim::{MotionBundle, Position, Relationship},
+    sim::{MotionBundle, PredictedPosition, Relationship},
 };
 
 #[derive(Parser, Debug, Resource)]
@@ -101,7 +101,7 @@ fn main() -> eyre::Result<()> {
             self::diagnostic::Plugin,
             self::interact::Plugin,
             self::render::Plugin,
-            self::sim::SimPlugin,
+            self::sim::Plugin,
             self::ui::Plugin,
         ))
         .add_systems(Startup, setup)
@@ -170,7 +170,7 @@ fn receive(
     mut commands: Commands,
     scraper: Res<background::Thread>,
     mut known: ResMut<KnownEntities>,
-    positions: Query<&Position>,
+    positions: Query<&PredictedPosition>,
     relationship_parent: Single<Entity, With<RelationshipParent>>,
 ) {
     if let Some(response) = scraper.try_recv().unwrap() {
@@ -190,14 +190,14 @@ fn receive(
                     Entry::Occupied(entry) => {
                         let album = *entry.get();
                         let position = *positions.get(album).unwrap();
-                        (album, position)
+                        (album, position.0)
                     }
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
                         let album = commands.spawn((album, motion)).id();
                         entry.insert(album);
-                        (album, position)
+                        (album, position.0)
                     }
                 };
                 for user in users {
@@ -224,14 +224,14 @@ fn receive(
                     Entry::Occupied(entry) => {
                         let album = *entry.get();
                         let position = *positions.get(album).unwrap();
-                        (album, position)
+                        (album, position.0)
                     }
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
                         let album = commands.spawn((album, motion)).id();
                         entry.insert(album);
-                        (album, position)
+                        (album, position.0)
                     }
                 };
                 let artist = *known.artists.entry(artist.id).or_insert_with(|| {
@@ -256,14 +256,14 @@ fn receive(
                     Entry::Occupied(entry) => {
                         let artist = *entry.get();
                         let position = *positions.get(artist).unwrap();
-                        (artist, position)
+                        (artist, position.0)
                     }
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
                         let artist = commands.spawn((artist, motion)).id();
                         entry.insert(artist);
-                        (artist, position)
+                        (artist, position.0)
                     }
                 };
                 for album in albums {
@@ -290,14 +290,14 @@ fn receive(
                     Entry::Occupied(entry) => {
                         let user = *entry.get();
                         let position = *positions.get(user).unwrap();
-                        (user, position)
+                        (user, position.0)
                     }
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
                         let user = commands.spawn((user, motion)).id();
                         entry.insert(user);
-                        (user, position)
+                        (user, position.0)
                     }
                 };
                 for album in albums {

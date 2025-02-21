@@ -12,13 +12,12 @@ use bevy::{
     render::mesh::{Mesh, Mesh2d},
     render::view::Visibility,
     sprite::{ColorMaterial, MeshMaterial2d},
-    time::{Fixed, Time},
     transform::components::Transform,
 };
 
 use crate::{
     data::{AlbumId, ArtistId, UserId},
-    sim::{Paused, Position, Relationship, Velocity},
+    sim::{Paused, PredictedPosition, Relationship},
     RelationshipParent,
 };
 
@@ -131,28 +130,20 @@ fn init_meshes(
     }
 }
 
-fn node_translation(position: &Position, velocity: &Velocity, time: &Time<Fixed>) -> Vec3 {
-    (position.0 + velocity.0 * time.overstep_fraction()).extend(0.0)
-}
-
 fn init_node_transforms(
-    query: Query<(Entity, &Position, &Velocity), Without<Transform>>,
-    time: Res<Time<Fixed>>,
+    query: Query<(Entity, &PredictedPosition), Without<Transform>>,
     mut commands: Commands,
 ) {
-    for (entity, position, velocity) in &query {
+    for (entity, position) in &query {
         commands
             .entity(entity)
-            .insert(Transform::from_translation(node_translation(
-                &position, &velocity, &time,
-            )));
+            .insert(Transform::from_translation(position.0.extend(0.0)));
     }
 }
 
 fn update_node_transforms(
     paused: Res<Paused>,
-    mut query: Query<(&mut Transform, &Position, &Velocity)>,
-    time: Res<Time<Fixed>>,
+    mut query: Query<(&mut Transform, &PredictedPosition)>,
     mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
@@ -161,8 +152,8 @@ fn update_node_transforms(
 
     let start = Instant::now();
 
-    for (mut transform, position, velocity) in &mut query {
-        transform.translation = node_translation(&position, &velocity, &time);
+    for (mut transform, position) in &mut query {
+        transform.translation = position.0.extend(0.0);
     }
 
     diagnostics.add_measurement(&self::diagnostic::NODES, || {
@@ -170,13 +161,9 @@ fn update_node_transforms(
     });
 }
 
-fn relationship_transform(
-    (from_pos, from_vel): (&Position, &Velocity),
-    (to_pos, to_vel): (&Position, &Velocity),
-    time: &Time<Fixed>,
-) -> Transform {
-    let from = from_pos.0 + from_vel.0 * time.overstep_fraction();
-    let to = to_pos.0 + to_vel.0 * time.overstep_fraction();
+fn relationship_transform(from: &PredictedPosition, to: &PredictedPosition) -> Transform {
+    let from = from.0;
+    let to = to.0;
     let delta = to - from;
     Transform {
         rotation: Quat::from_rotation_z(delta.to_angle()),
@@ -187,21 +174,20 @@ fn relationship_transform(
 
 fn init_relationship_transforms(
     relationships: Query<(Entity, &Relationship), Without<Transform>>,
-    nodes: Query<(&Position, &Velocity)>,
-    time: Res<Time<Fixed>>,
+    positions: Query<&PredictedPosition>,
     mut commands: Commands,
 ) {
     for (entity, rel) in &relationships {
-        let Ok(from) = nodes.get(rel.from) else {
+        let Ok(from) = positions.get(rel.from) else {
             continue;
         };
-        let Ok(to) = nodes.get(rel.to) else {
+        let Ok(to) = positions.get(rel.to) else {
             continue;
         };
 
         commands
             .entity(entity)
-            .insert(relationship_transform(from, to, &time));
+            .insert(relationship_transform(from, to));
     }
 }
 
@@ -209,8 +195,7 @@ fn update_relationship_transforms(
     paused: Res<Paused>,
     relationship_parent: Single<&Visibility, With<RelationshipParent>>,
     mut relationships: Query<(&Relationship, &mut Transform)>,
-    nodes: Query<(&Position, &Velocity)>,
-    time: Res<Time<Fixed>>,
+    positions: Query<&PredictedPosition>,
     mut diagnostics: Diagnostics,
 ) {
     if *relationship_parent == Visibility::Hidden || paused.0 {
@@ -220,14 +205,14 @@ fn update_relationship_transforms(
     let start = Instant::now();
 
     for (rel, mut transform) in &mut relationships {
-        let Ok(from) = nodes.get(rel.from) else {
+        let Ok(from) = positions.get(rel.from) else {
             continue;
         };
-        let Ok(to) = nodes.get(rel.to) else {
+        let Ok(to) = positions.get(rel.to) else {
             continue;
         };
 
-        *transform = relationship_transform(from, to, &time);
+        *transform = relationship_transform(from, to);
     }
 
     diagnostics.add_measurement(&self::diagnostic::RELATIONS, || {

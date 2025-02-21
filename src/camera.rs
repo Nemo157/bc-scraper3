@@ -2,6 +2,7 @@ use bevy::{
     app::{App, Plugin, PreUpdate, Startup, Update},
     core_pipeline::core_2d::Camera2d,
     ecs::{
+        change_detection::DetectChangesMut,
         change_detection::{Res, ResMut},
         query::With,
         system::{Commands, Resource, Single},
@@ -18,7 +19,7 @@ use bevy::{
     window::{PrimaryWindow, Window},
 };
 
-#[derive(Default, Resource)]
+#[derive(Default, Resource, PartialEq)]
 pub struct Cursor {
     pub screen_delta: Vec2,
     pub screen_position: Vec2,
@@ -38,33 +39,45 @@ impl Plugin for CameraPlugin {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    commands.insert_resource(Cursor::default());
 }
 
 fn update_cursor_position(
-    mut cursor: ResMut<Cursor>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&GlobalTransform, &Camera), ()>,
+    cursor: Option<ResMut<Cursor>>,
+    mut commands: Commands,
 ) {
     let Some(screen_position) = window.cursor_position() else {
+        commands.remove_resource::<Cursor>();
         return;
     };
 
     let (global_transform, camera) = camera.into_inner();
 
     let Ok(world_position) = camera.viewport_to_world_2d(&global_transform, screen_position) else {
+        commands.remove_resource::<Cursor>();
         return;
     };
 
-    // Can't use `AccumulatedMouseMotion` because that has truncation issues.
-    cursor.screen_delta = cursor.screen_position - screen_position;
-    cursor.screen_position = screen_position;
-    cursor.world_position = world_position;
+    if let Some(mut cursor) = cursor {
+        cursor.set_if_neq(Cursor {
+            // Can't use `AccumulatedMouseMotion` because that has truncation issues.
+            screen_delta: cursor.screen_position - screen_position,
+            screen_position,
+            world_position,
+        });
+    } else {
+        commands.insert_resource(Cursor {
+            screen_delta: Vec2::ZERO,
+            screen_position,
+            world_position,
+        });
+    }
 }
 
 fn drag(
     button: Res<ButtonInput<MouseButton>>,
-    cursor: Res<Cursor>,
+    cursor: Option<Res<Cursor>>,
     mut transform: Single<&mut Transform, With<Camera>>,
     dragged: Res<crate::interact::Dragged>,
 ) {
@@ -72,7 +85,12 @@ fn drag(
         return;
     }
 
-    if button.pressed(MouseButton::Left) && !button.just_pressed(MouseButton::Left) {
+    let Some(cursor) = cursor else { return };
+
+    if button.pressed(MouseButton::Left)
+        && !button.just_pressed(MouseButton::Left)
+        && cursor.screen_delta != Vec2::ZERO
+    {
         let mut delta = cursor.screen_delta * transform.scale.x;
         delta.y *= -1.0;
         transform.translation += delta.extend(0.0);
@@ -82,7 +100,7 @@ fn drag(
 fn zoom(
     scroll: Res<AccumulatedMouseScroll>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    cursor: Res<Cursor>,
+    cursor: Option<Res<Cursor>>,
     mut transform: Single<&mut Transform, With<Camera>>,
     mut time: ResMut<Time<Virtual>>,
 ) {
@@ -95,6 +113,8 @@ fn zoom(
         }
         return;
     }
+
+    let Some(cursor) = cursor else { return };
 
     let position = cursor.world_position.extend(0.0);
 

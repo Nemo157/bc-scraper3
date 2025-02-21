@@ -1,5 +1,4 @@
 use bevy::{
-    app::{App, FixedUpdate, Plugin, Update},
     diagnostic::Diagnostics,
     ecs::{
         bundle::Bundle,
@@ -28,7 +27,11 @@ use rand::distr::{Distribution, Uniform};
 mod diagnostic;
 
 #[derive(Debug, Default, Component, Copy, Clone)]
+#[require(PredictedPosition)]
 pub struct Position(pub Vec2);
+
+#[derive(Debug, Default, Component, Copy, Clone)]
+pub struct PredictedPosition(pub Vec2);
 
 #[derive(Debug, Default, Component)]
 pub struct Velocity(pub Vec2);
@@ -68,13 +71,12 @@ impl MotionBundle {
         }
     }
 
-    pub fn random_near(position: Position) -> Self {
+    pub fn random_near(position: Vec2) -> Self {
         let mut rng = rand::rng();
         let positions = Uniform::new(-100.0, 100.0).unwrap();
         let velocities = Uniform::new(-10.0, 10.0).unwrap();
 
-        let position =
-            position.0 + Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
+        let position = position + Vec2::new(positions.sample(&mut rng), positions.sample(&mut rng));
         let velocity = Vec2::new(velocities.sample(&mut rng), velocities.sample(&mut rng));
 
         Self {
@@ -178,15 +180,15 @@ impl Partitions {
     }
 }
 
-pub struct SimPlugin;
+pub struct Plugin;
 
-impl Plugin for SimPlugin {
-    fn build(&self, app: &mut App) {
+impl bevy::app::Plugin for Plugin {
+    fn build(&self, app: &mut bevy::app::App) {
         app.add_systems(
-            FixedUpdate,
+            bevy::app::FixedUpdate,
             (update_positions, repel, attract, update_velocities).chain(),
         );
-        app.add_systems(Update, lock_pinned);
+        app.add_systems(bevy::app::PreUpdate, (lock_pinned, predict_positions));
         app.insert_resource(Paused(false));
         app.insert_resource(Partitions::default());
         app.add_plugins(self::diagnostic::Plugin);
@@ -194,15 +196,39 @@ impl Plugin for SimPlugin {
 }
 
 fn lock_pinned(
-    mut query: Query<(&mut Position, &mut Velocity, &Pinned), Changed<Pinned>>,
-    time: Res<Time<Fixed>>,
+    mut query: Query<(&mut Position, &mut Velocity, &PredictedPosition, &Pinned), Changed<Pinned>>,
 ) {
-    for (mut position, mut velocity, pinned) in &mut query {
+    for (mut position, mut velocity, predicted, pinned) in &mut query {
         if pinned.count > 0 {
-            position.0 += velocity.0 * time.overstep_fraction();
+            position.0 = predicted.0;
             velocity.0 = Vec2::ZERO;
         }
     }
+}
+
+fn predict_positions(
+    paused: Res<Paused>,
+    mut query: Query<(
+        &mut PredictedPosition,
+        &Position,
+        &Velocity,
+        Option<&Pinned>,
+    )>,
+    time: Res<Time<Fixed>>,
+) {
+    if paused.0 {
+        return;
+    }
+
+    query
+        .par_iter_mut()
+        .for_each(|(mut predicted, position, velocity, pinned)| {
+            if pinned.map_or(0, |p| p.count) == 0 {
+                predicted.0 = position.0 + velocity.0 * time.overstep_fraction();
+            } else {
+                predicted.0 = position.0;
+            }
+        });
 }
 
 fn update_positions(

@@ -10,6 +10,7 @@ use bevy::{
     math::{Quat, Vec3},
     picking::PickingBehavior,
     render::mesh::{Mesh, Mesh2d},
+    render::view::Visibility,
     sprite::{ColorMaterial, MeshMaterial2d},
     transform::components::Transform,
 };
@@ -42,16 +43,24 @@ pub fn setup(
 }
 
 fn update(
-    mut transform: Single<&mut Transform, With<NearestLine>>,
-    nearest: Res<Nearest>,
-    cursor: Res<Cursor>,
+    line: Single<(&mut Transform, &mut Visibility), With<NearestLine>>,
+    nearest: Option<Res<Nearest>>,
+    cursor: Option<Res<Cursor>>,
 ) {
-    let from = cursor.world_position;
-    let Some(to) = nearest.position else { return };
+    let (mut transform, mut visibility) = line.into_inner();
 
-    let delta = from - to;
+    let Some((cursor, nearest)) = cursor.zip(nearest) else {
+        *visibility = Visibility::Hidden;
+        return;
+    };
 
+    let delta = cursor.world_position - nearest.position;
+
+    *visibility = Visibility::Visible;
     transform.rotation = Quat::from_rotation_z(delta.to_angle());
     transform.scale = Vec3::new(delta.length(), 1.0, 1.0);
-    transform.translation = from.midpoint(to).extend(-0.5);
+    transform.translation = cursor
+        .world_position
+        .midpoint(nearest.position)
+        .extend(-0.5);
 }
