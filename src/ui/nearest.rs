@@ -18,7 +18,7 @@ use bevy::{
 };
 
 use crate::{
-    data::{EntityType, Url},
+    data::{AlbumDetails, ArtistDetails, EntityType, Url, UserDetails},
     interact::Nearest,
 };
 
@@ -56,6 +56,9 @@ fn setup(mut commands: Commands) {
 struct NodeDetails {
     ty: &'static EntityType,
     url: &'static Url,
+    album: Option<&'static AlbumDetails>,
+    artist: Option<&'static ArtistDetails>,
+    user: Option<&'static UserDetails>,
 }
 
 fn update(
@@ -75,19 +78,65 @@ fn update(
         };
 
         commands.entity(*ui).with_children(|ui| {
-            ui.spawn((
-                Text::new(format!("{:?}", &details.ty)),
-                TextFont::default().with_font_size(21.0),
-                Label,
-                PickingBehavior::IGNORE,
-            ));
+            if let Some(album) = details.album {
+                let AlbumDetails {
+                    title,
+                    artist,
+                    tracks,
+                    length,
+                    released,
+                } = album;
 
-            ui.spawn((
-                Text::new(&details.url.0),
-                TextFont::default(),
-                Label,
-                PickingBehavior::IGNORE,
-            ));
+                ui.spawn((
+                    Text::new(format!("Album: {title}")),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+
+                ui.spawn((
+                    Text::new(format!("by {artist} in {}", released.year())),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+
+                ui.spawn((
+                    Text::new(format!("{tracks} tracks | {length:?}")),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+            } else if let Some(artist) = details.artist {
+                let ArtistDetails { name } = artist;
+                ui.spawn((
+                    Text::new(format!("Artist: {name}")),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+            } else if let Some(user) = details.user {
+                let UserDetails { name, username } = user;
+                ui.spawn((
+                    Text::new(format!("User: {name} ({username})")),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+            } else {
+                ui.spawn((
+                    Text::new(format!("Unscraped {:?}", details.ty)),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+                ui.spawn((
+                    Text::new(&details.url.0),
+                    TextFont::default(),
+                    Label,
+                    PickingBehavior::IGNORE,
+                ));
+            }
         });
     }
 }

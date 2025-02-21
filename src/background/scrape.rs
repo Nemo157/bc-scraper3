@@ -1,4 +1,6 @@
-use crate::data::{Album, AlbumId, Artist, ArtistId, User, UserId};
+use crate::data::{
+    Album, AlbumDetails, AlbumId, Artist, ArtistDetails, ArtistId, User, UserDetails, UserId,
+};
 use std::collections::HashMap;
 use url::Url;
 
@@ -66,6 +68,93 @@ struct AlbumPage {
     data_band: DataBand,
     collectors: Collectors,
     discography: String,
+    ld_data: AlbumLdData,
+}
+
+fn parse_rfc2822_date<'de, D>(deserializer: D) -> Result<jiff::Zoned, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct Visitor;
+
+    impl<'de> de::Visitor<'de> for Visitor {
+        type Value = jiff::Zoned;
+
+        fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            f.write_str("an rfc2822 string")
+        }
+
+        #[inline]
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<jiff::Zoned, E> {
+            jiff::fmt::rfc2822::parse(value).map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_str(Visitor)
+}
+
+fn parse_broken_duration<'de, D>(deserializer: D) -> Result<jiff::SignedDuration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct Visitor;
+
+    impl<'de> de::Visitor<'de> for Visitor {
+        type Value = jiff::SignedDuration;
+
+        fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            f.write_str("a duration string")
+        }
+
+        #[inline]
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<jiff::SignedDuration, E> {
+            if let Some(value) = value.strip_prefix("P00H") {
+                format!("PT{value}").parse().map_err(E::custom)
+            } else {
+                value.parse().map_err(E::custom)
+            }
+        }
+    }
+
+    deserializer.deserialize_str(Visitor)
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AlbumLdData {
+    #[serde(rename = "datePublished", deserialize_with = "parse_rfc2822_date")]
+    date_published: jiff::Zoned,
+    #[serde(rename = "byArtist")]
+    by_artist: ByArtist,
+    name: String,
+    track: ItemList<Track>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ByArtist {
+    name: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ItemList<T> {
+    #[serde(rename = "itemListElement")]
+    elements: Vec<ItemListElement<T>>,
+    #[serde(rename = "numberOfItems")]
+    length: u32,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ItemListElement<T> {
+    item: T,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Track {
+    #[serde(deserialize_with = "parse_broken_duration")]
+    duration: jiff::SignedDuration,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -129,6 +218,7 @@ struct CollectionData {
 #[derive(Debug, serde::Deserialize)]
 pub struct FanData {
     fan_id: u64,
+    name: String,
     username: String,
 }
 
@@ -185,17 +275,33 @@ impl Scraper {
     pub(crate) fn scrape_album(
         &self,
         url: &Url,
-        on_album: impl FnOnce(Album) -> eyre::Result<()>,
+        on_album: impl FnOnce(Album, AlbumDetails) -> eyre::Result<()>,
         on_album_artist: impl FnOnce(Artist) -> eyre::Result<()>,
         mut on_fans: impl FnMut(Vec<User>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
         let page = self.scrape_album_page(url)?;
 
         let mut more_available = page.collectors.more_thumbs_available;
-        on_album(Album {
-            id: AlbumId(page.properties.item_id),
-            url: url.into(),
-        })?;
+        on_album(
+            Album {
+                id: AlbumId(page.properties.item_id),
+                url: url.into(),
+            },
+            AlbumDetails {
+                title: page.ld_data.name,
+                artist: page.ld_data.by_artist.name,
+                tracks: page.ld_data.track.length,
+                length: page
+                    .ld_data
+                    .track
+                    .elements
+                    .iter()
+                    .map(|el| el.item.duration)
+                    .reduce(|a, b| a + b)
+                    .unwrap_or_default(),
+                released: page.ld_data.date_published.round(jiff::Unit::Day)?,
+            },
+        )?;
 
         on_album_artist(Artist {
             id: ArtistId(page.data_band.id),
@@ -252,15 +358,21 @@ impl Scraper {
     pub(crate) fn scrape_fan(
         &self,
         url: &Url,
-        on_fan: impl FnOnce(User) -> eyre::Result<()>,
+        on_fan: impl FnOnce(User, UserDetails) -> eyre::Result<()>,
         mut on_collection: impl FnMut(Vec<Album>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
         let mut page = self.scrape_fan_page(url)?;
 
-        on_fan(User {
-            id: UserId(page.fan_data.fan_id),
-            url: format!("https://bandcamp.com/{}", page.fan_data.username).into(),
-        })?;
+        on_fan(
+            User {
+                id: UserId(page.fan_data.fan_id),
+                url: format!("https://bandcamp.com/{}", page.fan_data.username).into(),
+            },
+            UserDetails {
+                name: page.fan_data.name,
+                username: page.fan_data.username,
+            },
+        )?;
 
         let items = eyre::Result::<Vec<_>, _>::from_iter(
             page.collection_data.sequence.into_iter().map(|s| {
@@ -304,15 +416,20 @@ impl Scraper {
     pub(crate) fn scrape_artist(
         &self,
         url: &Url,
-        on_artist: impl FnOnce(Artist) -> eyre::Result<()>,
+        on_artist: impl FnOnce(Artist, ArtistDetails) -> eyre::Result<()>,
         mut on_releases: impl FnMut(Vec<Album>) -> eyre::Result<()>,
     ) -> eyre::Result<()> {
         let page = self.scrape_artist_page(url)?;
 
-        on_artist(Artist {
-            id: ArtistId(page.data_band.id),
-            url: url.into(),
-        })?;
+        on_artist(
+            Artist {
+                id: ArtistId(page.data_band.id),
+                url: url.into(),
+            },
+            ArtistDetails {
+                name: page.data_band.name,
+            },
+        )?;
 
         on_releases(eyre::Result::<Vec<_>, _>::from_iter(
             page.music_grid_items.into_iter().map(|item| {
@@ -338,35 +455,47 @@ impl Scraper {
     fn scrape_album_page(&self, url: &Url) -> eyre::Result<AlbumPage> {
         let data = self.client.get(url)?;
         let document = scraper::Html::parse_document(&data);
+
         let properties = document
             .try_select_one("meta[name=bc-page-properties]")?
             .value()
             .attr("content")
             .ok_or_else(|| eyre::eyre!("missing data-blob"))?
             .parse_json()?;
+
         let data_band = document
             .try_select_one("[data-band]")?
             .value()
             .attr("data-band")
             .ok_or_else(|| eyre::eyre!("missing data-band"))?
             .parse_json()?;
+
         let collectors = document
             .try_select_one("#collectors-data")?
             .value()
             .attr("data-blob")
             .ok_or_else(|| eyre::eyre!("missing data-blob"))?
             .parse_json()?;
+
         let discography = document
             .try_select_one("#discography a.link-and-title")?
             .value()
             .attr("href")
             .ok_or_else(|| eyre::eyre!("missing discography href"))?
             .to_owned();
+
+        let ld_data = document
+            .try_select_one(r#"script[type="application/ld+json"]"#)?
+            .text()
+            .collect::<String>()
+            .parse_json()?;
+
         AlbumPage {
             properties,
             data_band,
             collectors,
             discography,
+            ld_data,
         }
     }
 

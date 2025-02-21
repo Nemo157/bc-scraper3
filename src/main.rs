@@ -175,15 +175,35 @@ fn receive(
 ) {
     if let Some(response) = scraper.try_recv().unwrap() {
         match response {
-            Response::User(_user) => {
-                // TODO: mark as scraped
-            }
-            Response::Album(_album) => {
-                // TODO: mark as scraped
-            }
-            Response::Artist(_arist) => {
-                // TODO: mark as scraped
-            }
+            Response::Album(album, details) => match known.albums.entry(album.id) {
+                Entry::Occupied(entry) => {
+                    commands.entity(*entry.get()).insert(details);
+                }
+                Entry::Vacant(entry) => {
+                    let motion = MotionBundle::random();
+                    entry.insert(commands.spawn((album, motion, details)).id());
+                }
+            },
+
+            Response::Artist(artist, details) => match known.artists.entry(artist.id) {
+                Entry::Occupied(entry) => {
+                    commands.entity(*entry.get()).insert(details);
+                }
+                Entry::Vacant(entry) => {
+                    let motion = MotionBundle::random();
+                    entry.insert(commands.spawn((artist, motion, details)).id());
+                }
+            },
+
+            Response::User(user, details) => match known.users.entry(user.id) {
+                Entry::Occupied(entry) => {
+                    commands.entity(*entry.get()).insert(details);
+                }
+                Entry::Vacant(entry) => {
+                    let motion = MotionBundle::random();
+                    entry.insert(commands.spawn((user, motion, details)).id());
+                }
+            },
 
             Response::Fans(album, users) => {
                 let (album, position) = match known.albums.entry(album.id) {

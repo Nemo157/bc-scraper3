@@ -12,18 +12,6 @@ use crate::sim::{MotionBundle, Relationship, Weight};
 
 mod diagnostic;
 
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
-#[require(EntityType(|| EntityType::Album))]
-pub struct AlbumId(pub u64);
-
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
-#[require(EntityType(|| EntityType::Artist))]
-pub struct ArtistId(pub u64);
-
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
-#[require(EntityType(|| EntityType::User))]
-pub struct UserId(pub u64);
-
 #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
 pub struct Url(pub String);
 
@@ -58,16 +46,50 @@ pub enum EntityType {
     User,
 }
 
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::Album))]
+pub struct AlbumId(pub u64);
+
+#[derive(Clone, Debug, Component)]
+pub struct AlbumDetails {
+    pub title: String,
+    /// This is the _album artist_ which may not be the same name as the artist that owns the store
+    /// which released the album (e.g. record labels, or featured artists).
+    pub artist: String,
+    pub tracks: u32,
+    pub length: jiff::SignedDuration,
+    pub released: jiff::Zoned,
+}
+
 #[derive(Debug, Clone, Bundle)]
 pub struct Album {
     pub id: AlbumId,
     pub url: Url,
 }
 
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::Artist))]
+pub struct ArtistId(pub u64);
+
+#[derive(Clone, Debug, Component)]
+pub struct ArtistDetails {
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Bundle)]
 pub struct Artist {
     pub id: ArtistId,
     pub url: Url,
+}
+
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+#[require(EntityType(|| EntityType::User))]
+pub struct UserId(pub u64);
+
+#[derive(Clone, Debug, Component)]
+pub struct UserDetails {
+    pub name: String,
+    pub username: String,
 }
 
 #[derive(Debug, Clone, Bundle)]
