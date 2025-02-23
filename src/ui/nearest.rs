@@ -1,7 +1,7 @@
 use bevy::{
     color::Color,
     ecs::{
-        change_detection::DetectChanges,
+        change_detection::{DetectChanges, Ref},
         component::Component,
         entity::Entity,
         query::{QueryData, With},
@@ -56,9 +56,22 @@ fn setup(mut commands: Commands) {
 struct NodeDetails {
     ty: &'static EntityType,
     url: &'static Url,
-    artist: Option<&'static ArtistDetails>,
-    release: Option<&'static ReleaseDetails>,
-    user: Option<&'static UserDetails>,
+    artist: Option<Ref<'static, ArtistDetails>>,
+    release: Option<Ref<'static, ReleaseDetails>>,
+    user: Option<Ref<'static, UserDetails>>,
+}
+
+impl NodeDetailsItem<'_> {
+    fn is_changed(&self) -> bool {
+        [
+            self.artist.as_ref().map(|x| x.is_changed()),
+            self.release.as_ref().map(|x| x.is_changed()),
+            self.user.as_ref().map(|x| x.is_changed()),
+        ]
+        .into_iter()
+        .flatten()
+        .any(core::convert::identity)
+    }
 }
 
 fn update(
@@ -69,16 +82,16 @@ fn update(
 ) {
     let Some(nearest) = nearest else { return };
 
-    if nearest.is_changed() {
+    let Ok(details) = details.get(nearest.entity) else {
+        // nothing to show
+        return;
+    };
+
+    if nearest.is_changed() || details.is_changed() {
         commands.entity(*ui).despawn_descendants();
 
-        let Ok(details) = details.get(nearest.entity) else {
-            // nothing to show
-            return;
-        };
-
         commands.entity(*ui).with_children(|ui| {
-            if let Some(release) = details.release {
+            if let Some(release) = details.release.as_deref() {
                 let ReleaseDetails {
                     title,
                     artist,
@@ -112,7 +125,7 @@ fn update(
                     Label,
                     PickingBehavior::IGNORE,
                 ));
-            } else if let Some(artist) = details.artist {
+            } else if let Some(artist) = details.artist.as_deref() {
                 let ArtistDetails { name } = artist;
                 ui.spawn((
                     Text::new(format!("Artist: {name}")),
@@ -120,7 +133,7 @@ fn update(
                     Label,
                     PickingBehavior::IGNORE,
                 ));
-            } else if let Some(user) = details.user {
+            } else if let Some(user) = details.user.as_deref() {
                 let UserDetails { name, username } = user;
                 ui.spawn((
                     Text::new(format!("User: {name} ({username})")),
