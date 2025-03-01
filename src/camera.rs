@@ -1,10 +1,10 @@
 use bevy::{
-    app::{App, Plugin, PreUpdate, Startup, Update},
     core_pipeline::core_2d::Camera2d,
     ecs::{
         change_detection::DetectChangesMut,
         change_detection::{Res, ResMut},
         query::With,
+        schedule::IntoSystemConfigs,
         system::{Commands, Resource, Single},
     },
     input::keyboard::KeyCode,
@@ -28,12 +28,12 @@ pub struct Cursor {
 
 pub struct CameraPlugin;
 
-impl Plugin for CameraPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(PreUpdate, update_cursor_position)
-            .add_systems(Update, drag)
-            .add_systems(Update, zoom);
+impl bevy::app::Plugin for CameraPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.add_systems(bevy::app::Startup, setup).add_systems(
+            bevy::app::PreUpdate,
+            (update_cursor_position, drag, zoom).chain(),
+        );
     }
 }
 
@@ -78,9 +78,11 @@ fn update_cursor_position(
 fn drag(
     button: Res<ButtonInput<MouseButton>>,
     cursor: Option<Res<Cursor>>,
-    mut transform: Single<&mut Transform, With<Camera>>,
+    camera: Single<(&mut Transform, &mut GlobalTransform), With<Camera>>,
     dragged: Res<crate::interact::Dragged>,
 ) {
+    let (mut transform, mut global_transform) = camera.into_inner();
+
     if dragged.0.is_some() {
         return;
     }
@@ -94,6 +96,8 @@ fn drag(
         let mut delta = cursor.screen_delta * transform.scale.x;
         delta.y *= -1.0;
         transform.translation += delta.extend(0.0);
+
+        *global_transform = GlobalTransform::from(*transform)
     }
 }
 
@@ -101,9 +105,11 @@ fn zoom(
     scroll: Res<AccumulatedMouseScroll>,
     keyboard: Res<ButtonInput<KeyCode>>,
     cursor: Option<Res<Cursor>>,
-    mut transform: Single<&mut Transform, With<Camera>>,
+    camera: Single<(&mut Transform, &mut GlobalTransform), With<Camera>>,
     mut time: ResMut<Time<Virtual>>,
 ) {
+    let (mut transform, mut global_transform) = camera.into_inner();
+
     if keyboard.pressed(KeyCode::ShiftLeft) {
         if scroll.unit == MouseScrollUnit::Line && scroll.delta.y != 0.0 {
             let new_value = time.relative_speed() + scroll.delta.y.signum() * 0.125;
@@ -123,5 +129,7 @@ fn zoom(
         let zoom_ratio = if scroll.delta.y < 0.0 { 1.5 } else { 1.0 / 1.5 };
         transform.scale *= zoom_ratio;
         transform.translation = position + (transform.translation - position) * zoom_ratio;
+
+        *global_transform = GlobalTransform::from(*transform)
     }
 }
