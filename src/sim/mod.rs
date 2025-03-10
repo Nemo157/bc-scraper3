@@ -335,8 +335,13 @@ fn repel(
                 .filter_map(|entity| positions.get(entity).ok())
                 .for_each(|other_position| {
                     let dist = position.0 - other_position.0;
-                    let dsq = position.0.distance_squared(other_position.0).max(0.001);
-                    acceleration.0 += dist * 1000.0 / dsq;
+                    let dsq = position.0.distance_squared(other_position.0);
+                    if dsq < 0.001 {
+                        acceleration.0 +=
+                            Vec2::new(rand::random::<f32>() - 0.5, rand::random::<f32>() - 0.5);
+                    } else {
+                        acceleration.0 += dist * 1000.0 / dsq;
+                    }
                 });
             nearby_us.fetch_add(nearby_start.elapsed().as_micros() as u64, Ordering::Relaxed);
 
@@ -346,7 +351,7 @@ fn repel(
                 .filter_map(|key| averages.get(&key))
                 .for_each(|&(other_position, count)| {
                     let dist = position.0 - other_position;
-                    let dsq = position.0.distance_squared(other_position).max(0.001);
+                    let dsq = position.0.distance_squared(other_position);
                     acceleration.0 += dist * 1000.0 * (count as f32) / dsq;
                 });
             distant_us.fetch_add(
