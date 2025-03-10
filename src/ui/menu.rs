@@ -194,7 +194,7 @@ fn button_click(
     let Some(nearest) = nearest else { return };
 
     if trigger.event.button == PointerButton::Primary {
-        let request = |mut data: &mut Query<(&Url, &EntityType, &mut Scrape)>, entity| match data
+        let request = |data: &mut Query<(&Url, &EntityType, &mut Scrape)>, entity| match data
             .get_mut(entity)
         {
             Ok((Url(url), EntityType::Release, mut scrape)) => {

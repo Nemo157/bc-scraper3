@@ -6,22 +6,16 @@ use bevy::{
         query::{With, Without},
         system::{Commands, Query, Res, ResMut, Resource, Single},
     },
-    input::{keyboard::KeyCode, ButtonInput},
     math::Vec2,
-    picking::{
-        events::{Click, Down, Drag, Out, Over, Pointer, Up},
-        pointer::PointerButton,
-    },
+    picking::events::{Down, Drag, Out, Over, Pointer, Up},
     render::camera::Camera,
     render::view::Visibility,
     transform::components::Transform,
 };
 
 use crate::{
-    background::Request,
     camera::Cursor,
-    data::{EntityType, Url},
-    sim::{Pinned, PredictedPosition, Relationship},
+    sim::{Pinned, PredictedPosition},
 };
 
 #[derive(Default, Resource)]
