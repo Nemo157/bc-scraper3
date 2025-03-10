@@ -105,6 +105,23 @@ pub struct User {
     pub url: Url,
 }
 
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Component)]
+pub enum Scrape {
+    None,
+    InProgress,
+    Shallow,
+    Deep,
+    ExtraDeep,
+}
+
+impl Scrape {
+    pub fn clamp_to(&mut self, range: std::ops::RangeFrom<Self>) {
+        if range.start > *self {
+            *self = range.start;
+        }
+    }
+}
+
 #[derive(Bundle)]
 pub struct RelationshipBundle {
     relationship: Relationship,

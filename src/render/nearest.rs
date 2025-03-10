@@ -3,16 +3,19 @@ use bevy::{
     color::Color,
     ecs::{
         component::Component,
-        query::With,
+        query::{QueryData, Without},
         system::{Commands, Res, ResMut, Single},
     },
     math::primitives::Rectangle,
+    math::Vec2,
     math::{Quat, Vec3},
     picking::PickingBehavior,
+    render::camera::Camera,
     render::mesh::{Mesh, Mesh2d},
     render::view::Visibility,
     sprite::{ColorMaterial, MeshMaterial2d},
-    transform::components::Transform,
+    transform::components::{GlobalTransform, Transform},
+    ui::Val,
 };
 
 use crate::{camera::Cursor, interact::Nearest};
@@ -27,7 +30,7 @@ impl bevy::app::Plugin for Plugin {
 }
 
 #[derive(Default, Component)]
-struct NearestLine;
+struct NearestLineMarker;
 
 pub fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
@@ -37,30 +40,53 @@ pub fn setup(
     commands.spawn((
         Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
         MeshMaterial2d(materials.add(Color::hsl(30., 0.95, 0.7))),
-        NearestLine,
+        NearestLineMarker,
         PickingBehavior::IGNORE,
     ));
 }
 
+#[derive(QueryData)]
+#[query_data(mutable)]
+struct NearestLine {
+    transform: &'static mut Transform,
+    visibility: &'static mut Visibility,
+
+    _marker: &'static NearestLineMarker,
+}
+
 fn update(
-    line: Single<(&mut Transform, &mut Visibility), With<NearestLine>>,
+    mut line: Single<NearestLine>,
     nearest: Option<Res<Nearest>>,
     cursor: Option<Res<Cursor>>,
+    menu: Single<crate::ui::menu::Menu, Without<NearestLineMarker>>,
+    camera: Single<(&GlobalTransform, &Camera), ()>,
 ) {
-    let (mut transform, mut visibility) = line.into_inner();
+    let Some(nearest) = nearest else { return };
 
-    let Some((cursor, nearest)) = cursor.zip(nearest) else {
-        *visibility = Visibility::Hidden;
-        return;
+    let target = if *menu.visibility == Visibility::Hidden {
+        let Some(cursor) = cursor else {
+            *line.visibility = Visibility::Hidden;
+            return;
+        };
+        cursor.world_position
+    } else {
+        let (global_transform, camera) = camera.into_inner();
+
+        let (Val::Px(left), Val::Px(top)) = (menu.node.left, menu.node.top) else {
+            return;
+        };
+        let Ok(position) = camera.viewport_to_world_2d(&global_transform, Vec2::new(left, top))
+        else {
+            return;
+        };
+
+        position
     };
 
-    let delta = cursor.world_position - nearest.position;
+    let delta = target - nearest.position;
 
-    *visibility = Visibility::Visible;
-    transform.rotation = Quat::from_rotation_z(delta.to_angle());
-    transform.scale = Vec3::new(delta.length(), 1.0, 1.0);
-    transform.translation = cursor
-        .world_position
-        .midpoint(nearest.position)
-        .extend(-0.5);
+    *line.visibility = Visibility::Visible;
+    line.transform.rotation = Quat::from_rotation_z(delta.to_angle());
+    line.transform.scale = Vec3::new(delta.length(), 1.0, 1.0);
+    line.transform.translation = target.midpoint(nearest.position).extend(-0.5);
 }

@@ -31,12 +31,14 @@ mod data;
 mod diagnostic;
 mod interact;
 mod render;
+mod runtime;
 mod sim;
 mod ui;
 
 use crate::{
     background::Response,
-    data::{ArtistId, ReleaseId, UserId},
+    data::{ArtistId, ReleaseId, Scrape, UserId},
+    runtime::Runtime,
     sim::{MotionBundle, PredictedPosition, Relationship},
 };
 
@@ -55,9 +57,7 @@ At least one option must be passed to select initial data
   <bold>Left-Click drag</bold> node to move it
   <bold>Scroll</bold> to zoom
   <bold>Shift+Scroll</bold> to scale timestep
-  <bold>Short-Click</bold> node to expand it
-  <bold>Shift+Short-Click</bold> node to expand its linked nodes
-  <bold>Ctrl+Shift+Short-Click</bold> node to expand its linked nodes' linked nodes
+  <bold>Right-Click</bold> to show/hide action menu for nearest node (indicated by line from cursor)
   <bold>Space</bold> to (un)pause simulation
   <bold>L</bold> to hide lines
 
@@ -93,6 +93,7 @@ fn main() -> eyre::Result<()> {
         .insert_resource(args)
         .insert_resource(background::Thread::spawn(dirs.cache_dir())?)
         .insert_resource(KnownEntities::default())
+        .insert_resource(Runtime::new())
         .add_plugins((
             DefaultPlugins.set(bevy::log::LogPlugin {
                 custom_layer: |_| Some(Box::new(tracing_error::ErrorLayer::default())),
@@ -174,6 +175,7 @@ fn receive(
     scraper: Res<background::Thread>,
     mut known: ResMut<KnownEntities>,
     positions: Query<&PredictedPosition>,
+    mut scrape: Query<&mut Scrape>,
     relationship_parent: Single<Entity, With<RelationshipParent>>,
 ) {
     if let Some(response) = scraper.try_recv().unwrap() {
@@ -181,30 +183,51 @@ fn receive(
             Response::Artist(artist, details) => match known.artists.entry(artist.id) {
                 Entry::Occupied(entry) => {
                     commands.entity(*entry.get()).insert(details);
+                    if let Ok(mut scrape) = scrape.get_mut(*entry.get()) {
+                        scrape.clamp_to(Scrape::Shallow..);
+                    }
                 }
                 Entry::Vacant(entry) => {
                     let motion = MotionBundle::random();
-                    entry.insert(commands.spawn((artist, motion, details)).id());
+                    entry.insert(
+                        commands
+                            .spawn((artist, motion, details, Scrape::Shallow))
+                            .id(),
+                    );
                 }
             },
 
             Response::Release(release, details) => match known.releases.entry(release.id) {
                 Entry::Occupied(entry) => {
                     commands.entity(*entry.get()).insert(details);
+                    if let Ok(mut scrape) = scrape.get_mut(*entry.get()) {
+                        scrape.clamp_to(Scrape::Shallow..);
+                    }
                 }
                 Entry::Vacant(entry) => {
                     let motion = MotionBundle::random();
-                    entry.insert(commands.spawn((release, motion, details)).id());
+                    entry.insert(
+                        commands
+                            .spawn((release, motion, details, Scrape::Shallow))
+                            .id(),
+                    );
                 }
             },
 
             Response::User(user, details) => match known.users.entry(user.id) {
                 Entry::Occupied(entry) => {
                     commands.entity(*entry.get()).insert(details);
+                    if let Ok(mut scrape) = scrape.get_mut(*entry.get()) {
+                        scrape.clamp_to(Scrape::Shallow..);
+                    }
                 }
                 Entry::Vacant(entry) => {
                     let motion = MotionBundle::random();
-                    entry.insert(commands.spawn((user, motion, details)).id());
+                    entry.insert(
+                        commands
+                            .spawn((user, motion, details, Scrape::Shallow))
+                            .id(),
+                    );
                 }
             },
 
@@ -218,7 +241,7 @@ fn receive(
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
-                        let release = commands.spawn((release, motion)).id();
+                        let release = commands.spawn((release, motion, Scrape::Shallow)).id();
                         entry.insert(release);
                         (release, position.0)
                     }
@@ -226,7 +249,7 @@ fn receive(
                 for user in users {
                     let user = *known.users.entry(user.id).or_insert_with(|| {
                         commands
-                            .spawn((user, MotionBundle::random_near(position)))
+                            .spawn((user, MotionBundle::random_near(position), Scrape::None))
                             .id()
                     });
                     let relationship = Relationship {
@@ -252,14 +275,14 @@ fn receive(
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
-                        let release = commands.spawn((release, motion)).id();
+                        let release = commands.spawn((release, motion, Scrape::InProgress)).id();
                         entry.insert(release);
                         (release, position.0)
                     }
                 };
                 let artist = *known.artists.entry(artist.id).or_insert_with(|| {
                     commands
-                        .spawn((artist, MotionBundle::random_near(position)))
+                        .spawn((artist, MotionBundle::random_near(position), Scrape::None))
                         .id()
                 });
                 let relationship = Relationship {
@@ -284,7 +307,7 @@ fn receive(
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
-                        let artist = commands.spawn((artist, motion)).id();
+                        let artist = commands.spawn((artist, motion, Scrape::InProgress)).id();
                         entry.insert(artist);
                         (artist, position.0)
                     }
@@ -292,7 +315,7 @@ fn receive(
                 for release in releases {
                     let release = *known.releases.entry(release.id).or_insert_with(|| {
                         commands
-                            .spawn((release, MotionBundle::random_near(position)))
+                            .spawn((release, MotionBundle::random_near(position), Scrape::None))
                             .id()
                     });
                     let relationship = Relationship {
@@ -318,7 +341,7 @@ fn receive(
                     Entry::Vacant(entry) => {
                         let motion = MotionBundle::random();
                         let position = motion.position;
-                        let user = commands.spawn((user, motion)).id();
+                        let user = commands.spawn((user, motion, Scrape::InProgress)).id();
                         entry.insert(user);
                         (user, position.0)
                     }
@@ -326,7 +349,7 @@ fn receive(
                 for release in releases {
                     let release = *known.releases.entry(release.id).or_insert_with(|| {
                         commands
-                            .spawn((release, MotionBundle::random_near(position)))
+                            .spawn((release, MotionBundle::random_near(position), Scrape::None))
                             .id()
                     });
                     let relationship = Relationship {

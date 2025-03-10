@@ -8,8 +8,12 @@ use bevy::{
     },
     input::{keyboard::KeyCode, ButtonInput},
     math::Vec2,
-    picking::events::{Click, Down, Drag, Out, Over, Pointer, Up},
+    picking::{
+        events::{Click, Down, Drag, Out, Over, Pointer, Up},
+        pointer::PointerButton,
+    },
     render::camera::Camera,
+    render::view::Visibility,
     transform::components::Transform,
 };
 
@@ -44,7 +48,6 @@ impl bevy::app::Plugin for Plugin {
         app.add_observer(pointer_down);
         app.add_observer(pointer_drag);
         app.add_observer(pointer_up);
-        app.add_observer(pointer_click);
         app.add_observer(pointer_over);
         app.add_observer(pointer_out);
     }
@@ -53,10 +56,21 @@ impl bevy::app::Plugin for Plugin {
 fn update_nearest(
     cursor: Option<Res<Cursor>>,
     positions: Query<(Entity, &PredictedPosition)>,
-    nearest: Option<ResMut<Nearest>>,
+    mut nearest: Option<ResMut<Nearest>>,
+    menu: Single<crate::ui::menu::Menu>,
     mut commands: Commands,
 ) {
     let Some(cursor) = cursor else { return };
+
+    if *menu.visibility == Visibility::Visible {
+        if let Some(nearest) = nearest.as_mut() {
+            let Ok((_, position)) = positions.get(nearest.entity) else {
+                return;
+            };
+            nearest.position = position.0;
+        }
+        return;
+    }
 
     let Some((entity, position)) = positions.iter().min_by_key(|(_, position)| {
         // positive floats have the same order when viewed as bits
@@ -89,10 +103,11 @@ fn pointer_down(
         pinned.count -= 1;
     }
 
-    dragged.0 = Some(trigger.entity());
-
     if let Some(mut pinned) = pinned.get_mut(trigger.entity()).ok() {
         pinned.count += 1;
+        dragged.0 = Some(trigger.entity());
+    } else {
+        dragged.0 = None;
     }
 }
 
@@ -155,47 +170,5 @@ fn pointer_drag(
         delta.y *= -1.0;
         position.0 += delta;
         transform.translation += delta.extend(0.0);
-    }
-}
-
-fn pointer_click(
-    trigger: Trigger<Pointer<Click>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    scraper: Res<crate::background::Thread>,
-    data: Query<(&Url, &EntityType)>,
-    relationships: Query<&Relationship>,
-) {
-    if trigger.duration.as_millis() < 100 {
-        let request = |entity| match data.get(entity) {
-            Ok((Url(url), EntityType::Release)) => {
-                scraper.send(Request::Release { url: url.clone() }).unwrap();
-            }
-            Ok((Url(url), EntityType::Artist)) => {
-                scraper.send(Request::Artist { url: url.clone() }).unwrap();
-            }
-            Ok((Url(url), EntityType::User)) => {
-                scraper.send(Request::User { url: url.clone() }).unwrap();
-            }
-            Err(_) => {}
-        };
-
-        if keyboard.pressed(KeyCode::ShiftLeft) {
-            let next_level = |entity| {
-                relationships.iter().filter_map(move |rel| {
-                    (rel.from == entity)
-                        .then_some(rel.to)
-                        .or((rel.to == entity).then_some(rel.from))
-                })
-            };
-            if keyboard.pressed(KeyCode::ControlLeft) {
-                next_level(trigger.entity())
-                    .flat_map(|entity| next_level(entity))
-                    .for_each(|entity| request(entity));
-            } else {
-                next_level(trigger.entity()).for_each(|entity| request(entity));
-            }
-        } else {
-            request(trigger.entity());
-        }
     }
 }
