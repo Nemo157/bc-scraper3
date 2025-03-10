@@ -5,9 +5,9 @@ use bevy::{
         change_detection::{DetectChanges, Mut},
         component::{Component, ComponentId},
         entity::Entity,
-        query::Changed,
+        query::{Changed, Without},
         schedule::IntoSystemConfigs,
-        system::{Query, Res, ResMut, Resource},
+        system::{Commands, Query, Res, ResMut, Resource},
         world::DeferredWorld,
     },
     math::{I64Vec2, Vec2},
@@ -27,7 +27,6 @@ use rand::distr::{Distribution, Uniform};
 mod diagnostic;
 
 #[derive(Debug, Default, Component, Copy, Clone)]
-#[require(PredictedPosition)]
 pub struct Position(pub Vec2);
 
 #[derive(Debug, Default, Component, Copy, Clone)]
@@ -188,10 +187,24 @@ impl bevy::app::Plugin for Plugin {
             bevy::app::FixedUpdate,
             (update_positions, repel, attract, update_velocities).chain(),
         );
-        app.add_systems(bevy::app::PreUpdate, (lock_pinned, predict_positions));
+        app.add_systems(
+            bevy::app::PreUpdate,
+            (lock_pinned, init_predicted_position, predict_positions),
+        );
         app.insert_resource(Paused(false));
         app.insert_resource(Partitions::default());
         app.add_plugins(self::diagnostic::Plugin);
+    }
+}
+
+fn init_predicted_position(
+    query: Query<(Entity, &Position), Without<PredictedPosition>>,
+    mut commands: Commands,
+) {
+    for (entity, position) in &query {
+        commands
+            .entity(entity)
+            .insert(PredictedPosition(position.0));
     }
 }
 
