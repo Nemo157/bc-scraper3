@@ -16,7 +16,7 @@ use bevy::{
     ui::{BackgroundColor, Display, GridPlacement, Node, PositionType, RepeatedGridTrack, Val},
 };
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub struct Plugin;
 
@@ -76,13 +76,14 @@ fn pre_update(
         return;
     }
 
+    dbg!(&paths);
     // This should barely ever be reached, so easier to just replace everything when it is.
 
     commands.entity(*parent).despawn_descendants();
 
     #[derive(Debug, Default)]
     struct PathNode<'a> {
-        children: HashMap<&'a str, PathNode<'a>>,
+        children: BTreeMap<&'a str, PathNode<'a>>,
         path: Option<&'a DiagnosticPath>,
     }
 
