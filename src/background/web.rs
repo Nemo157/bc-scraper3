@@ -7,6 +7,7 @@ use rusqlite::{
 use std::{
     cell::Cell,
     path::Path,
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 use url::Url;
@@ -16,6 +17,8 @@ pub(crate) struct Client {
     client: reqwest::blocking::Client,
     cache: rusqlite::Connection,
     last_request: Cell<Instant>,
+
+    stats: Arc<super::Stats>,
 }
 
 #[derive(Debug, strum::AsRefStr)]
@@ -58,7 +61,7 @@ impl DebugExt for serde_json::Value {
 
 impl Client {
     #[culpa::try_fn]
-    pub(crate) fn new(cache_dir: &Path) -> eyre::Result<Self> {
+    pub(crate) fn new(cache_dir: &Path, stats: Arc<super::Stats>) -> eyre::Result<Self> {
         let mut cache = rusqlite::Connection::open(cache_dir.join("web-cache.sqlite"))?;
 
         let migrations = [
@@ -86,12 +89,14 @@ impl Client {
             client: reqwest::blocking::Client::new(),
             cache,
             last_request: Cell::new(Instant::now()),
+            stats,
         }
     }
 
     #[culpa::try_fn]
     #[tracing::instrument(skip(self), fields(%url))]
     pub(crate) fn get(&self, url: &Url) -> eyre::Result<String> {
+        self.stats.web_requests.fetch_add(1, Ordering::Relaxed);
         if let Some(response) = self.get_from_cache(url, Method::Get, None)? {
             response
         } else {
@@ -104,6 +109,7 @@ impl Client {
     #[culpa::try_fn]
     #[tracing::instrument(skip(self), fields(%url))]
     pub(crate) fn post(&self, url: &Url, data: &serde_json::Value) -> eyre::Result<String> {
+        self.stats.web_requests.fetch_add(1, Ordering::Relaxed);
         if let Some(response) = self.get_from_cache(url, Method::Post, Some(data))? {
             response
         } else {
@@ -141,9 +147,11 @@ impl Client {
 
         if let Some((retrieved, response)) = result {
             tracing::info!(%retrieved, "cache hit");
+            self.stats.web_cache_hits.fetch_add(1, Ordering::Relaxed);
             Some(response)
         } else {
             tracing::info!("cache miss");
+            self.stats.web_cache_misses.fetch_add(1, Ordering::Relaxed);
             None
         }
     }

@@ -1,8 +1,16 @@
 use crate::data::{Artist, ArtistDetails, Release, ReleaseDetails, User, UserDetails};
 use crossbeam::channel::{Receiver, SendError, Sender, TryRecvError};
-use std::{cell::RefCell, path::Path};
+use std::{
+    cell::RefCell,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use url::Url;
 
+pub mod diagnostic;
 mod scrape;
 mod web;
 
@@ -25,9 +33,21 @@ pub enum Response {
     Releases(Artist, Vec<Release>),
 }
 
+#[derive(Debug, Default)]
+struct Stats {
+    items_queued: AtomicUsize,
+    items_processing: AtomicBool,
+    items_completed: AtomicUsize,
+
+    web_requests: AtomicUsize,
+    web_cache_misses: AtomicUsize,
+    web_cache_hits: AtomicUsize,
+}
+
 #[derive(Debug, bevy::ecs::system::Resource)]
 pub struct Thread {
     thread: Option<std::thread::JoinHandle<()>>,
+    stats: Arc<Stats>,
     to_scrape_tx: Option<Sender<Request>>,
     scraped_rx: Option<Receiver<Response>>,
 }
@@ -35,12 +55,15 @@ pub struct Thread {
 impl Thread {
     #[culpa::try_fn]
     pub fn spawn(cache_dir: &Path) -> eyre::Result<Self> {
+        let stats = Arc::new(Stats::default());
+        let client = self::web::Client::new(cache_dir, stats.clone())?;
         let (to_scrape_tx, to_scrape_rx) = crossbeam::channel::unbounded();
         let (scraped_tx, scraped_rx) = crossbeam::channel::bounded(1);
-        let background = Background::new(cache_dir, to_scrape_rx, scraped_tx)?;
+        let background = Background::new(client, stats.clone(), to_scrape_rx, scraped_tx)?;
         let thread = Some(std::thread::spawn(move || background.run()));
         Thread {
             thread,
+            stats,
             to_scrape_tx: Some(to_scrape_tx),
             scraped_rx: Some(scraped_rx),
         }
@@ -48,6 +71,7 @@ impl Thread {
 
     #[culpa::try_fn]
     pub fn send(&self, request: Request) -> eyre::Result<()> {
+        self.stats.items_queued.fetch_add(1, Ordering::Relaxed);
         self.to_scrape_tx.as_ref().unwrap().send(request)?;
     }
 
@@ -74,6 +98,7 @@ impl Drop for Thread {
 #[derive(Debug)]
 struct Background {
     scraper: self::scrape::Scraper,
+    stats: Arc<Stats>,
     to_scrape: Receiver<Request>,
     scraped: Sender<Response>,
 }
@@ -81,13 +106,14 @@ struct Background {
 impl Background {
     #[culpa::try_fn]
     fn new(
-        cache_dir: &Path,
+        client: self::web::Client,
+        stats: Arc<Stats>,
         to_scrape: Receiver<Request>,
         scraped: Sender<Response>,
     ) -> eyre::Result<Self> {
-        let scraper = self::scrape::Scraper::new(self::web::Client::new(cache_dir)?);
         Self {
-            scraper,
+            scraper: self::scrape::Scraper::new(client),
+            stats,
             to_scrape,
             scraped,
         }
@@ -95,6 +121,8 @@ impl Background {
 
     fn run(&self) {
         for request in &self.to_scrape {
+            self.stats.items_queued.fetch_sub(1, Ordering::Relaxed);
+            self.stats.items_processing.store(true, Ordering::Relaxed);
             if let Err(error) = self.handle_request(request) {
                 if error.is::<SendError<Response>>() {
                     tracing::info!("background thread shutdown while still processing an item");
@@ -102,6 +130,8 @@ impl Background {
                 }
                 tracing::error!(?error, "failed handling scrape request");
             }
+            self.stats.items_processing.store(false, Ordering::Relaxed);
+            self.stats.items_completed.fetch_add(1, Ordering::Relaxed);
         }
     }
 

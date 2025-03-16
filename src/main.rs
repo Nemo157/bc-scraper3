@@ -100,6 +100,7 @@ fn main() -> eyre::Result<()> {
                 ..default()
             }),
             MeshPickingPlugin,
+            self::background::diagnostic::Plugin,
             self::camera::CameraPlugin,
             self::data::Plugin,
             self::diagnostic::Plugin,

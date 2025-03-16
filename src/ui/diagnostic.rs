@@ -76,7 +76,6 @@ fn pre_update(
         return;
     }
 
-    dbg!(&paths);
     // This should barely ever be reached, so easier to just replace everything when it is.
 
     commands.entity(*parent).despawn_descendants();
