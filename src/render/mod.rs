@@ -3,6 +3,7 @@ use bevy::{
     color::Color,
     diagnostic::Diagnostics,
     ecs::{
+        change_detection::{DetectChanges, Ref},
         entity::Entity,
         query::{With, Without},
         system::{Commands, Query, Res, ResMut, Single},
@@ -194,12 +195,18 @@ fn init_relationship_transforms(
 
 fn update_relationship_transforms(
     paused: Res<Paused>,
-    relationship_parent: Single<&Visibility, With<RelationshipParent>>,
+    relationship_parent: Single<Ref<Visibility>, With<RelationshipParent>>,
     mut relationships: Query<(&Relationship, &mut Transform)>,
     positions: Query<&PredictedPosition>,
     mut diagnostics: Diagnostics,
 ) {
-    if *relationship_parent == Visibility::Hidden || paused.0 {
+    // if lines are hidden they don't need their transforms updated
+    if **relationship_parent == Visibility::Hidden {
+        return;
+    }
+    // if the sim is paused, the transforms won't change, _except_ if this is the first update after
+    // the lines become visible, if the lines were hidden before the sim was paused
+    if !relationship_parent.is_changed() && paused.0 {
         return;
     }
 
