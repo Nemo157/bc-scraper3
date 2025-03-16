@@ -409,10 +409,10 @@ fn attract(
             (to.0 - from.0) * 2.0 * weight.0
         };
         if let Ok((mut from, _, relations)) = nodes.get_mut(rel.from) {
-            from.0 += attraction / (relations.count as f32).sqrt();
+            from.0 += attraction / (relations.count as f32);
         }
         if let Ok((mut to, _, relations)) = nodes.get_mut(rel.to) {
-            to.0 -= attraction / (relations.count as f32).sqrt();
+            to.0 -= attraction / (relations.count as f32);
         }
     });
 
