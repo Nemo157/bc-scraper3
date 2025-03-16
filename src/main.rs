@@ -1,5 +1,5 @@
 use bevy::{
-    app::{App, PluginGroup, Startup, Update},
+    app::PluginGroup,
     ecs::{
         change_detection::ResMut,
         component::Component,
@@ -87,7 +87,7 @@ fn main() -> eyre::Result<()> {
 
     std::fs::create_dir_all(dirs.cache_dir())?;
 
-    App::new()
+    bevy::app::App::new()
         .insert_resource(Time::<Fixed>::from_hz(20.0))
         .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_millis(50)))
         .insert_resource(args)
@@ -109,8 +109,9 @@ fn main() -> eyre::Result<()> {
             self::sim::Plugin,
             self::ui::Plugin,
         ))
-        .add_systems(Startup, setup)
-        .add_systems(Update, (receive, keyinput))
+        .add_systems(bevy::app::Startup, setup)
+        .add_systems(bevy::app::PreUpdate, keyinput)
+        .add_systems(bevy::app::Update, receive)
         .run();
 }
 
