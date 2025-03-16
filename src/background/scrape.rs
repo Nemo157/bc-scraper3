@@ -67,6 +67,7 @@ impl ScraperExt for scraper::ElementRef<'_> {
 struct ReleasePage {
     properties: Properties,
     data_band: DataBand,
+    data_tralbum: DataTralbum,
     collectors: Collectors,
     discography: String,
     ld_data: ReleaseLdData,
@@ -129,8 +130,6 @@ struct BrokenDuration(#[serde(deserialize_with = "parse_broken_duration")] jiff:
 
 #[derive(Debug, serde::Deserialize)]
 struct ReleaseLdData {
-    #[serde(rename = "datePublished", deserialize_with = "parse_rfc2822_date")]
-    date_published: jiff::Zoned,
     #[serde(rename = "byArtist")]
     by_artist: ByArtist,
     name: String,
@@ -172,6 +171,21 @@ struct Properties {
 struct DataBand {
     id: u64,
     name: String,
+}
+
+#[allow(unused)]
+#[derive(Debug, serde::Deserialize)]
+struct DataTralbum {
+    current: DataTralbumCurrent,
+}
+
+#[allow(unused)]
+#[derive(Debug, serde::Deserialize)]
+struct DataTralbumCurrent {
+    #[serde(deserialize_with = "parse_rfc2822_date", default)]
+    release_date: jiff::Zoned,
+    #[serde(deserialize_with = "parse_rfc2822_date")]
+    publish_date: jiff::Zoned,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -286,6 +300,14 @@ impl Scraper {
         let page = self.scrape_release_page(url)?;
 
         let mut more_available = page.collectors.more_thumbs_available;
+
+        // For some reason some releases don't have a release date,
+        // fallback to the publish date for those
+        let mut released = page.data_tralbum.current.release_date;
+        if released.timestamp() == jiff::Timestamp::UNIX_EPOCH {
+            released = page.data_tralbum.current.publish_date;
+        }
+
         on_release(
             Release {
                 id: ReleaseId(page.properties.item_id),
@@ -314,7 +336,7 @@ impl Scraper {
                         })
                     })
                     .unwrap_or_default(),
-                released: page.ld_data.date_published.round(jiff::Unit::Day)?,
+                released: released.round(jiff::Unit::Day)?,
             },
         )?;
 
@@ -485,6 +507,13 @@ impl Scraper {
             .ok_or_else(|| eyre::eyre!("missing data-band"))?
             .parse_json()?;
 
+        let data_tralbum = document
+            .try_select_one("[data-tralbum]")?
+            .value()
+            .attr("data-tralbum")
+            .ok_or_else(|| eyre::eyre!("missing data-tralbum"))?
+            .parse_json()?;
+
         let collectors = document
             .try_select_one("#collectors-data")?
             .value()
@@ -508,6 +537,7 @@ impl Scraper {
         ReleasePage {
             properties,
             data_band,
+            data_tralbum,
             collectors,
             discography,
             ld_data,
