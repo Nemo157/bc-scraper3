@@ -22,6 +22,7 @@ pub mod update {
         pub const DISTANT: DiagnosticPath = DiagnosticPath::const_new("sim/update/repel/distant");
     }
 
+    pub const CHECK_YEET: DiagnosticPath = DiagnosticPath::const_new("sim/update/check-yeet");
     pub const POSITIONS: DiagnosticPath = DiagnosticPath::const_new("sim/update/positions");
     pub const PARTITIONS: DiagnosticPath = DiagnosticPath::const_new("sim/update/partitions");
     pub const REPEL: DiagnosticPath = DiagnosticPath::const_new("sim/update/repel");
@@ -74,6 +75,7 @@ pub struct Plugin;
 impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut bevy::app::App) {
         for path in [
+            self::update::CHECK_YEET,
             self::update::POSITIONS,
             self::update::PARTITIONS,
             self::update::REPEL,

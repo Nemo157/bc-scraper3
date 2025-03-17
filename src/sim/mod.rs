@@ -269,11 +269,13 @@ fn predict_positions(
         });
 }
 
-fn check_yeet(query: Query<(&Position, &Velocity, &Acceleration)>) {
+fn check_yeet(query: Query<(&Position, &Velocity, &Acceleration)>, mut diagnostics: Diagnostics) {
+    let start = Instant::now();
+
     let yeet = std::sync::atomic::AtomicBool::new(false);
 
     query.par_iter().for_each(|(position, _, _)| {
-        if position.0.length() > 20000. {
+        if !position.0.x.is_finite() || !position.0.y.is_finite() {
             yeet.store(true, Ordering::Relaxed);
         }
     });
@@ -294,8 +296,12 @@ fn check_yeet(query: Query<(&Position, &Velocity, &Acceleration)>) {
         }
         eprintln!();
         eprintln!("sim yeeted itself, hopefully the above shows something useful");
-        std::process::exit(0);
+        std::process::exit(1);
     }
+
+    diagnostics.add_measurement(&self::diagnostic::update::CHECK_YEET, || {
+        start.elapsed().as_secs_f64() * 1000.
+    });
 }
 
 fn update_positions(
