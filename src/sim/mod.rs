@@ -309,7 +309,7 @@ fn update_velocities(
         .par_iter_mut()
         .for_each(|(mut velocity, acceleration, pinned)| {
             if pinned.map_or(0, |p| p.count) == 0 {
-                velocity.0 = (velocity.0 * 0.7 + acceleration.0 * 0.05).clamp_length_max(50.0);
+                velocity.0 = (velocity.0 * 0.7 + acceleration.0).clamp_length_max(50.0);
             }
         });
 
@@ -361,9 +361,9 @@ fn repel(
         .par_iter_mut()
         .for_each(|(mut acceleration, position)| {
             acceleration.0 = match *origin_force_mode {
-                OriginForceMode::Unit => position.0 * -0.1,
-                OriginForceMode::Square => position.0 * position.0.length() * -0.001,
-                OriginForceMode::Cube => position.0 * position.0.length_squared() * -0.00001,
+                OriginForceMode::Unit => position.0 * -0.005,
+                OriginForceMode::Square => position.0 * position.0.length() * -0.00005,
+                OriginForceMode::Cube => position.0 * position.0.length_squared() * -0.0000005,
             };
 
             let nearby_start = Instant::now();
@@ -377,7 +377,7 @@ fn repel(
                         acceleration.0 +=
                             Vec2::new(rand::random::<f32>() - 0.5, rand::random::<f32>() - 0.5);
                     } else {
-                        acceleration.0 += dist * 1000.0 / dsq;
+                        acceleration.0 += dist * 50.0 / dsq;
                     }
                 });
             nearby_us.fetch_add(nearby_start.elapsed().as_micros() as u64, Ordering::Relaxed);
@@ -389,7 +389,7 @@ fn repel(
                 .for_each(|&(other_position, count)| {
                     let dist = position.0 - other_position;
                     let dsq = position.0.distance_squared(other_position);
-                    acceleration.0 += dist * 1000.0 * (count as f32) / dsq;
+                    acceleration.0 += dist * 50.0 * (count as f32) / dsq;
                 });
             distant_us.fetch_add(
                 distant_start.elapsed().as_micros() as u64,
@@ -430,7 +430,7 @@ fn attract(
             let Ok((_, to, _)) = nodes.get(rel.to) else {
                 return;
             };
-            (to.0 - from.0) * 2.0 * weight.0
+            (to.0 - from.0) * weight.0 / 10.
         };
         if let Ok((mut from, _, relations)) = nodes.get_mut(rel.from) {
             from.0 += attraction / (relations.count as f32);
