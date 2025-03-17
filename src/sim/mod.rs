@@ -203,7 +203,14 @@ impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.add_systems(
             bevy::app::FixedUpdate,
-            (update_positions, repel, attract, update_velocities).chain(),
+            (
+                update_positions,
+                check_yeet,
+                repel,
+                attract,
+                update_velocities,
+            )
+                .chain(),
         );
         app.add_systems(
             bevy::app::PreUpdate,
@@ -261,6 +268,35 @@ fn predict_positions(
                 predicted.0 = position.0;
             }
         });
+}
+
+fn check_yeet(query: Query<(&Position, &Velocity, &Acceleration)>) {
+    let yeet = std::sync::atomic::AtomicBool::new(false);
+
+    query.par_iter().for_each(|(position, _, _)| {
+        if position.0.length() > 20000. {
+            yeet.store(true, Ordering::Relaxed);
+        }
+    });
+
+    if yeet.load(Ordering::Relaxed) {
+        eprintln!();
+        eprintln!();
+        for ((pos, vel, acc), i) in query.iter().zip(0..) {
+            eprint!(
+                "{:>15} {:>15} {:>15}    ",
+                format!("{:.0},{:.0}", pos.0.x, pos.0.y),
+                format!("{:.0},{:.0}", vel.0.x, vel.0.y),
+                format!("{:.0},{:.0}", acc.0.x, acc.0.y),
+            );
+            if i % 7 == 0 {
+                eprintln!();
+            }
+        }
+        eprintln!();
+        eprintln!("sim yeeted itself, hopefully the above shows something useful");
+        std::process::exit(0);
+    }
 }
 
 fn update_positions(
