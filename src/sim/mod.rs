@@ -2,7 +2,6 @@ use bevy::{
     diagnostic::Diagnostics,
     ecs::{
         bundle::Bundle,
-        change_detection::{DetectChanges, Mut},
         component::{Component, ComponentId},
         entity::Entity,
         query::{Changed, Without},
@@ -28,6 +27,9 @@ mod diagnostic;
 
 #[derive(Debug, Default, Component, Copy, Clone)]
 pub struct Position(pub Vec2);
+
+#[derive(Debug, Default, Component, Copy, Clone)]
+pub struct Partition(pub I64Vec2);
 
 #[derive(Debug, Default, Component, Copy, Clone)]
 pub struct PredictedPosition(pub Vec2);
@@ -140,23 +142,18 @@ impl Partitions {
         (point / Self::SIZE).floor().as_i64vec2()
     }
 
-    fn update(&mut self, from: Vec2, to: Vec2, entity: Entity) {
-        let from = Self::key(from);
-        let to = Self::key(to);
-
-        if from != to {
-            if let hash_map::Entry::Occupied(mut partition) = self.0.entry(from) {
-                partition.get_mut().remove(&entity);
-                if partition.get().is_empty() {
-                    partition.remove();
-                }
+    fn update(&mut self, from: I64Vec2, to: I64Vec2, entity: Entity) {
+        if let hash_map::Entry::Occupied(mut partition) = self.0.entry(from) {
+            partition.get_mut().remove(&entity);
+            if partition.get().is_empty() {
+                partition.remove();
             }
-            self.0.entry(to).or_default().insert(entity);
         }
+        self.0.entry(to).or_default().insert(entity);
     }
 
-    fn add(&mut self, point: Vec2, entity: Entity) {
-        self.0.entry(Self::key(point)).or_default().insert(entity);
+    fn add(&mut self, key: I64Vec2, entity: Entity) {
+        self.0.entry(key).or_default().insert(entity);
     }
 
     fn iter(
@@ -205,6 +202,8 @@ impl bevy::app::Plugin for Plugin {
             bevy::app::FixedUpdate,
             (
                 update_positions,
+                init_partitions,
+                update_partitions,
                 check_yeet,
                 repel,
                 attract,
@@ -301,8 +300,7 @@ fn check_yeet(query: Query<(&Position, &Velocity, &Acceleration)>) {
 
 fn update_positions(
     paused: Res<Paused>,
-    mut partitions: ResMut<Partitions>,
-    mut query: Query<(Mut<Position>, &Velocity, Option<&Pinned>, Entity)>,
+    mut query: Query<(&mut Position, &Velocity, Option<&Pinned>)>,
     mut diagnostics: Diagnostics,
 ) {
     if paused.0 {
@@ -313,19 +311,47 @@ fn update_positions(
 
     query
         .iter_mut()
-        .for_each(|(mut position, velocity, pinned, entity)| {
+        .for_each(|(mut position, velocity, pinned)| {
             if pinned.map_or(0, |p| p.count) == 0 {
-                let old_position = position.0;
-                let new_position = position.0 + velocity.0;
-                position.0 = new_position;
-                partitions.update(old_position, new_position, entity);
-            }
-            if position.is_added() {
-                partitions.add(position.0, entity);
+                position.0 = position.0 + velocity.0;
             }
         });
 
     diagnostics.add_measurement(&self::diagnostic::update::POSITIONS, || {
+        start.elapsed().as_secs_f64() * 1000.
+    });
+}
+
+fn init_partitions(
+    mut partitions: ResMut<Partitions>,
+    query: Query<(&Position, Entity), Without<Partition>>,
+    mut commands: Commands,
+) {
+    for (position, entity) in &query {
+        let key = Partitions::key(position.0);
+        partitions.add(key, entity);
+        commands.entity(entity).insert(Partition(key));
+    }
+}
+
+fn update_partitions(
+    mut partitions: ResMut<Partitions>,
+    mut query: Query<(&mut Partition, &Position, Entity)>,
+    mut diagnostics: Diagnostics,
+) {
+    let start = Instant::now();
+
+    query
+        .iter_mut()
+        .for_each(|(mut partition, position, entity)| {
+            let key = Partitions::key(position.0);
+            if key != partition.0 {
+                partitions.update(partition.0, key, entity);
+                partition.0 = key;
+            }
+        });
+
+    diagnostics.add_measurement(&self::diagnostic::update::PARTITIONS, || {
         start.elapsed().as_secs_f64() * 1000.
     });
 }

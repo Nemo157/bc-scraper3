@@ -23,6 +23,7 @@ pub mod update {
     }
 
     pub const POSITIONS: DiagnosticPath = DiagnosticPath::const_new("sim/update/positions");
+    pub const PARTITIONS: DiagnosticPath = DiagnosticPath::const_new("sim/update/partitions");
     pub const REPEL: DiagnosticPath = DiagnosticPath::const_new("sim/update/repel");
     pub const ATTRACT: DiagnosticPath = DiagnosticPath::const_new("sim/update/attract");
     pub const VELOCITIES: DiagnosticPath = DiagnosticPath::const_new("sim/update/velocities");
@@ -74,6 +75,7 @@ impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut bevy::app::App) {
         for path in [
             self::update::POSITIONS,
+            self::update::PARTITIONS,
             self::update::REPEL,
             self::update::repel::PARTITIONS,
             self::update::ATTRACT,
