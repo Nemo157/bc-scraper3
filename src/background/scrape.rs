@@ -69,7 +69,7 @@ struct ReleasePage {
     data_band: DataBand,
     data_tralbum: DataTralbum,
     collectors: Collectors,
-    discography: String,
+    discography: Option<String>,
     ld_data: ReleaseLdData,
 }
 
@@ -342,7 +342,11 @@ impl Scraper {
 
         on_release_artist(Artist {
             id: ArtistId(page.data_band.id),
-            url: url.join(&page.discography)?.into(),
+            url: page
+                .discography
+                .map(|discography| url.join(&discography))
+                .unwrap_or_else(|| url.join("/"))?
+                .into(),
         })?;
 
         let token = page
@@ -522,11 +526,9 @@ impl Scraper {
             .parse_json()?;
 
         let discography = document
-            .try_select_one("#discography a.link-and-title")?
-            .value()
-            .attr("href")
-            .ok_or_else(|| eyre::eyre!("missing discography href"))?
-            .to_owned();
+            .try_select_one("#discography a.link-and-title")
+            .ok()
+            .and_then(|el| el.value().attr("href").map(String::from));
 
         let ld_data = document
             .try_select_one(r#"script[type="application/ld+json"]"#)?
