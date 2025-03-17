@@ -60,6 +60,7 @@ At least one option must be passed to select initial data
   <bold>Right-Click</bold> to show/hide action menu for nearest node (indicated by line from cursor)
   <bold>Space</bold> to (un)pause simulation
   <bold>L</bold> to hide lines
+  <bold>O</bold> to cycle origin force scaling (unit, squared, cubed)
 
 "),
 )]
@@ -160,6 +161,7 @@ fn keyinput(
     mut events: EventReader<KeyboardInput>,
     mut relationship_parent: Single<&mut Visibility, With<RelationshipParent>>,
     mut paused: ResMut<sim::Paused>,
+    mut origin_force_mode: ResMut<sim::OriginForceMode>,
 ) {
     for event in events.read() {
         if event.state.is_pressed() {
@@ -167,6 +169,8 @@ fn keyinput(
                 relationship_parent.toggle_visible_hidden();
             } else if event.logical_key == Key::Space {
                 paused.0 ^= true;
+            } else if event.logical_key == Key::Character("o".into()) {
+                origin_force_mode.go_to_next();
             }
         }
     }

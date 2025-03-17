@@ -109,6 +109,24 @@ fn increment_relation_count(mut world: DeferredWorld, entity: Entity, _id: Compo
     world.get_mut::<RelationCount>(to).unwrap().count += 1;
 }
 
+#[derive(Debug, Default, Resource, Copy, Clone)]
+pub enum OriginForceMode {
+    #[default]
+    Unit,
+    Square,
+    Cube,
+}
+
+impl OriginForceMode {
+    pub fn go_to_next(&mut self) {
+        *self = match *self {
+            OriginForceMode::Unit => OriginForceMode::Square,
+            OriginForceMode::Square => OriginForceMode::Cube,
+            OriginForceMode::Cube => OriginForceMode::Unit,
+        }
+    }
+}
+
 #[derive(Default, Resource)]
 pub struct Paused(pub bool);
 
@@ -193,6 +211,7 @@ impl bevy::app::Plugin for Plugin {
         );
         app.insert_resource(Paused(false));
         app.insert_resource(Partitions::default());
+        app.insert_resource(OriginForceMode::default());
         app.add_plugins(self::diagnostic::Plugin);
     }
 }
@@ -301,6 +320,7 @@ fn update_velocities(
 
 fn repel(
     paused: Res<Paused>,
+    origin_force_mode: Res<OriginForceMode>,
     mut nodes: Query<(&mut Acceleration, &Position)>,
     partitions: Res<Partitions>,
     positions: Query<&Position>,
@@ -340,7 +360,11 @@ fn repel(
     nodes
         .par_iter_mut()
         .for_each(|(mut acceleration, position)| {
-            acceleration.0 = position.0 * -0.1;
+            acceleration.0 = match *origin_force_mode {
+                OriginForceMode::Unit => position.0 * -0.1,
+                OriginForceMode::Square => position.0 * position.0.length() * -0.001,
+                OriginForceMode::Cube => position.0 * position.0.length_squared() * -0.00001,
+            };
 
             let nearby_start = Instant::now();
             partitions
