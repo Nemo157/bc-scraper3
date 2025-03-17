@@ -11,6 +11,7 @@ pub mod items {
     use bevy::diagnostic::DiagnosticPath;
 
     pub const COMPLETED: DiagnosticPath = DiagnosticPath::const_new("scraper/items/completed");
+    pub const DUPLICATE: DiagnosticPath = DiagnosticPath::const_new("scraper/items/duplicate");
     pub const PROCESSING: DiagnosticPath = DiagnosticPath::const_new("scraper/items/processing");
     pub const QUEUED: DiagnosticPath = DiagnosticPath::const_new("scraper/items/queued");
 }
@@ -34,6 +35,7 @@ impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut bevy::app::App) {
         for path in [
             self::items::COMPLETED,
+            self::items::DUPLICATE,
             self::items::PROCESSING,
             self::items::QUEUED,
             self::web::REQUESTS,
@@ -50,6 +52,9 @@ impl bevy::app::Plugin for Plugin {
 fn update(mut diagnostics: Diagnostics, scraper: Res<super::Thread>) {
     diagnostics.add_measurement(&self::items::COMPLETED, || {
         scraper.stats.items_completed.load(Ordering::Relaxed) as f64
+    });
+    diagnostics.add_measurement(&self::items::DUPLICATE, || {
+        scraper.stats.items_duplicate.load(Ordering::Relaxed) as f64
     });
     diagnostics.add_measurement(&self::items::PROCESSING, || {
         scraper.stats.items_processing.load(Ordering::Relaxed) as usize as f64

@@ -2,10 +2,11 @@ use crate::data::{Artist, ArtistDetails, Release, ReleaseDetails, User, UserDeta
 use crossbeam::channel::{Receiver, SendError, Sender, TryRecvError};
 use std::{
     cell::RefCell,
+    collections::HashSet,
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 use url::Url;
@@ -14,7 +15,7 @@ pub mod diagnostic;
 mod scrape;
 mod web;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum Request {
     Artist { url: String },
     Release { url: String },
@@ -35,6 +36,7 @@ pub enum Response {
 
 #[derive(Debug, Default)]
 struct Stats {
+    items_duplicate: AtomicUsize,
     items_queued: AtomicUsize,
     items_processing: AtomicBool,
     items_completed: AtomicUsize,
@@ -48,6 +50,7 @@ struct Stats {
 pub struct Thread {
     thread: Option<std::thread::JoinHandle<()>>,
     stats: Arc<Stats>,
+    done: Mutex<HashSet<Request>>,
     to_scrape_tx: Option<Sender<Request>>,
     scraped_rx: Option<Receiver<Response>>,
 }
@@ -64,6 +67,7 @@ impl Thread {
         Thread {
             thread,
             stats,
+            done: Mutex::new(HashSet::new()),
             to_scrape_tx: Some(to_scrape_tx),
             scraped_rx: Some(scraped_rx),
         }
@@ -71,8 +75,12 @@ impl Thread {
 
     #[culpa::try_fn]
     pub fn send(&self, request: Request) -> eyre::Result<()> {
-        self.stats.items_queued.fetch_add(1, Ordering::Relaxed);
-        self.to_scrape_tx.as_ref().unwrap().send(request)?;
+        if self.done.lock().unwrap().insert(request.clone()) {
+            self.stats.items_queued.fetch_add(1, Ordering::Relaxed);
+            self.to_scrape_tx.as_ref().unwrap().send(request)?;
+        } else {
+            self.stats.items_duplicate.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     #[culpa::try_fn]
