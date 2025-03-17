@@ -31,12 +31,28 @@ pub mod update {
 pub mod data {
     use bevy::diagnostic::DiagnosticPath;
 
+    pub mod acceleration {
+        use bevy::diagnostic::DiagnosticPath;
+
+        pub const MAX: DiagnosticPath = DiagnosticPath::const_new("sim/acceleration/max");
+        pub const MEAN: DiagnosticPath = DiagnosticPath::const_new("sim/acceleration/mean");
+        pub const MIN: DiagnosticPath = DiagnosticPath::const_new("sim/acceleration/min");
+    }
+
     pub mod partitions {
         use bevy::diagnostic::DiagnosticPath;
 
         pub const MAX: DiagnosticPath = DiagnosticPath::const_new("sim/partitions/max");
         pub const MEAN: DiagnosticPath = DiagnosticPath::const_new("sim/partitions/mean");
         pub const MIN: DiagnosticPath = DiagnosticPath::const_new("sim/partitions/min");
+    }
+
+    pub mod velocity {
+        use bevy::diagnostic::DiagnosticPath;
+
+        pub const MAX: DiagnosticPath = DiagnosticPath::const_new("sim/velocity/max");
+        pub const MEAN: DiagnosticPath = DiagnosticPath::const_new("sim/velocity/mean");
+        pub const MIN: DiagnosticPath = DiagnosticPath::const_new("sim/velocity/min");
     }
 
     pub const PARTITIONS: DiagnosticPath = DiagnosticPath::const_new("sim/partitions");
@@ -73,6 +89,17 @@ impl bevy::app::Plugin for Plugin {
             app.register_diagnostic(Diagnostic::new(path).with_smoothing_factor(0.));
         }
 
+        for path in [
+            self::data::velocity::MAX,
+            self::data::velocity::MEAN,
+            self::data::velocity::MIN,
+            self::data::acceleration::MAX,
+            self::data::acceleration::MEAN,
+            self::data::acceleration::MIN,
+        ] {
+            app.register_diagnostic(Diagnostic::new(path));
+        }
+
         app.add_systems(bevy::app::Update, update);
     }
 }
@@ -81,10 +108,52 @@ fn update(
     mut diagnostics: Diagnostics,
     paused: Res<Paused>,
     partitions: Res<Partitions>,
-    nodes: Query<(), With<super::Position>>,
+    nodes: Query<(&super::Velocity, &super::Acceleration)>,
     relations: Query<(), With<super::Relationship>>,
 ) {
-    diagnostics.add_measurement(&self::data::NODES, || nodes.iter().count() as f64);
+    let (node_count, vel_min, vel_sum, vel_max, acc_min, acc_sum, acc_max) = nodes.iter().fold(
+        (
+            0,
+            f32::INFINITY,
+            0.,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            0.,
+            f32::NEG_INFINITY,
+        ),
+        |(node_count, vel_min, vel_sum, vel_max, acc_min, acc_sum, acc_max), (vel, acc)| {
+            let (vel, acc) = (vel.0.length(), acc.0.length());
+            (
+                node_count + 1,
+                vel_min.min(vel),
+                vel_sum + vel,
+                vel_max.max(vel),
+                acc_min.min(acc),
+                acc_sum + acc,
+                acc_max.max(acc),
+            )
+        },
+    );
+
+    diagnostics.add_measurement(&self::data::NODES, || node_count as f64);
+    if vel_min != f32::INFINITY {
+        diagnostics.add_measurement(&self::data::velocity::MIN, || vel_min as f64);
+    }
+    diagnostics.add_measurement(&self::data::velocity::MEAN, || {
+        vel_sum as f64 / node_count as f64
+    });
+    if vel_max != f32::NEG_INFINITY {
+        diagnostics.add_measurement(&self::data::velocity::MAX, || vel_max as f64);
+    }
+    if acc_min != f32::INFINITY {
+        diagnostics.add_measurement(&self::data::acceleration::MIN, || acc_min as f64);
+    }
+    diagnostics.add_measurement(&self::data::acceleration::MEAN, || {
+        acc_sum as f64 / node_count as f64
+    });
+    if acc_max != f32::NEG_INFINITY {
+        diagnostics.add_measurement(&self::data::acceleration::MAX, || acc_max as f64);
+    }
     diagnostics.add_measurement(&self::data::RELATIONS, || relations.iter().count() as f64);
     diagnostics.add_measurement(&self::data::PARTITIONS, || partitions.0.len() as f64);
     diagnostics.add_measurement(&self::data::partitions::MAX, || {
@@ -99,12 +168,7 @@ fn update(
         if partitions.0.is_empty() {
             0.
         } else {
-            partitions
-                .0
-                .values()
-                .map(|partition| partition.len() as f64)
-                .sum::<f64>()
-                / (partitions.0.len() as f64)
+            node_count as f64 / (partitions.0.len() as f64)
         }
     });
     diagnostics.add_measurement(&self::data::partitions::MIN, || {
