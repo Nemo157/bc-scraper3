@@ -47,6 +47,14 @@ pub mod data {
         pub const MIN: DiagnosticPath = DiagnosticPath::const_new("sim/partitions/min");
     }
 
+    pub mod position {
+        use bevy::diagnostic::DiagnosticPath;
+
+        pub const MAX: DiagnosticPath = DiagnosticPath::const_new("sim/position/max");
+        pub const MEAN: DiagnosticPath = DiagnosticPath::const_new("sim/position/mean");
+        pub const MIN: DiagnosticPath = DiagnosticPath::const_new("sim/position/min");
+    }
+
     pub mod velocity {
         use bevy::diagnostic::DiagnosticPath;
 
@@ -90,12 +98,15 @@ impl bevy::app::Plugin for Plugin {
         }
 
         for path in [
-            self::data::velocity::MAX,
-            self::data::velocity::MEAN,
-            self::data::velocity::MIN,
             self::data::acceleration::MAX,
             self::data::acceleration::MEAN,
             self::data::acceleration::MIN,
+            self::data::position::MAX,
+            self::data::position::MEAN,
+            self::data::position::MIN,
+            self::data::velocity::MAX,
+            self::data::velocity::MEAN,
+            self::data::velocity::MIN,
         ] {
             app.register_diagnostic(Diagnostic::new(path));
         }
@@ -108,34 +119,48 @@ fn update(
     mut diagnostics: Diagnostics,
     paused: Res<Paused>,
     partitions: Res<Partitions>,
-    nodes: Query<(&super::Velocity, &super::Acceleration)>,
+    nodes: Query<(&super::Position, &super::Velocity, &super::Acceleration)>,
     relations: Query<(), With<super::Relationship>>,
 ) {
-    let (node_count, vel_min, vel_sum, vel_max, acc_min, acc_sum, acc_max) = nodes.iter().fold(
+    let (
+        node_count,
+        (pos_min, pos_sum, pos_max),
+        (vel_min, vel_sum, vel_max),
+        (acc_min, acc_sum, acc_max),
+    ) = nodes.iter().fold(
         (
             0,
-            f32::INFINITY,
-            0.,
-            f32::NEG_INFINITY,
-            f32::INFINITY,
-            0.,
-            f32::NEG_INFINITY,
+            (f32::INFINITY, 0., f32::NEG_INFINITY),
+            (f32::INFINITY, 0., f32::NEG_INFINITY),
+            (f32::INFINITY, 0., f32::NEG_INFINITY),
         ),
-        |(node_count, vel_min, vel_sum, vel_max, acc_min, acc_sum, acc_max), (vel, acc)| {
-            let (vel, acc) = (vel.0.length(), acc.0.length());
+        |(
+            node_count,
+            (pos_min, pos_sum, pos_max),
+            (vel_min, vel_sum, vel_max),
+            (acc_min, acc_sum, acc_max),
+        ),
+         (pos, vel, acc)| {
+            let (pos, vel, acc) = (pos.0.length(), vel.0.length(), acc.0.length());
             (
                 node_count + 1,
-                vel_min.min(vel),
-                vel_sum + vel,
-                vel_max.max(vel),
-                acc_min.min(acc),
-                acc_sum + acc,
-                acc_max.max(acc),
+                (pos_min.min(pos), pos_sum + pos, pos_max.max(pos)),
+                (vel_min.min(vel), vel_sum + vel, vel_max.max(vel)),
+                (acc_min.min(acc), acc_sum + acc, acc_max.max(acc)),
             )
         },
     );
 
     diagnostics.add_measurement(&self::data::NODES, || node_count as f64);
+    if pos_min != f32::INFINITY {
+        diagnostics.add_measurement(&self::data::position::MIN, || pos_min as f64);
+    }
+    diagnostics.add_measurement(&self::data::position::MEAN, || {
+        pos_sum as f64 / node_count as f64
+    });
+    if pos_max != f32::NEG_INFINITY {
+        diagnostics.add_measurement(&self::data::position::MAX, || pos_max as f64);
+    }
     if vel_min != f32::INFINITY {
         diagnostics.add_measurement(&self::data::velocity::MIN, || vel_min as f64);
     }
