@@ -8,8 +8,8 @@ use bevy::{
         query::{With, Without},
         system::{Commands, Query, Res, ResMut, Single},
     },
-    math::primitives::{Annulus, Circle, Rectangle},
-    math::{Quat, Vec3},
+    math::primitives::{Circle, Rectangle, Triangle2d},
+    math::{Quat, Vec2, Vec3},
     render::mesh::{Mesh, Mesh2d},
     render::view::Visibility,
     sprite::{ColorMaterial, MeshMaterial2d},
@@ -71,7 +71,15 @@ pub fn setup_meshes(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    meshes.insert(&ARTIST_MESH_HANDLE, Annulus::new(10.0, 6.0).into());
+    meshes.insert(
+        &ARTIST_MESH_HANDLE,
+        Triangle2d::new(
+            Vec2::new(0.0, 5. * f32::sqrt(3.)),
+            Vec2::new(-10., -5. * f32::sqrt(3.)),
+            Vec2::new(10., -5. * f32::sqrt(3.)),
+        )
+        .into(),
+    );
     materials.insert(
         &ARTIST_COLOR_MATERIAL_HANDLE,
         Color::hsl(270., 0.95, 0.7).into(),
