@@ -1,14 +1,15 @@
-use super::super::web::Client;
+use super::super::web;
 use crate::data::{
     Artist, ArtistDetails, ArtistId, Release, ReleaseDetails, ReleaseId, ReleaseType, User,
     UserDetails, UserId,
 };
+use crossbeam::channel::Sender;
 use std::collections::HashMap;
 use url::Url;
 
 #[derive(Debug)]
 pub(crate) struct Scraper {
-    client: Client,
+    web: Sender<web::Request>,
 }
 
 trait JsonExt {
@@ -285,8 +286,8 @@ struct ClientItem {
 }
 
 impl Scraper {
-    pub(crate) fn new(client: Client) -> Self {
-        Self { client }
+    pub(crate) fn new(web: Sender<web::Request>) -> Self {
+        Self { web }
     }
 
     #[culpa::try_fn]
@@ -495,7 +496,7 @@ impl Scraper {
     #[culpa::try_fn]
     #[tracing::instrument(skip(self), fields(%url))]
     fn scrape_release_page(&self, url: &Url) -> eyre::Result<ReleasePage> {
-        let data = self.client.get(url)?;
+        let data = self.get(url.clone())?;
         let document = scraper::Html::parse_document(&data);
 
         let properties = document
@@ -550,7 +551,7 @@ impl Scraper {
     #[culpa::try_fn]
     #[tracing::instrument(skip(self), fields(%url))]
     pub(crate) fn scrape_artist_page(&self, url: &Url) -> eyre::Result<ArtistPage> {
-        let data = self.client.get(url)?;
+        let data = self.get(url.clone())?;
         let document = scraper::Html::parse_document(&data);
 
         let data_band = document
@@ -604,7 +605,7 @@ impl Scraper {
     #[culpa::try_fn]
     #[tracing::instrument(skip(self), fields(%url))]
     fn scrape_fan_page(&self, url: &Url) -> eyre::Result<FanPage> {
-        let data = self.client.get(url)?;
+        let data = self.get(url.clone())?;
         let document = scraper::Html::parse_document(&data);
         document
             .try_select_one("#pagedata")?
@@ -623,32 +624,50 @@ impl Scraper {
         token: &str,
     ) -> eyre::Result<Thumbs> {
         let url = base_url.join("/api/tralbumcollectors/2/thumbs")?;
-        self.client
-            .post(
-                &url,
-                &serde_json::json!({
-                    "tralbum_type": props.item_type,
-                    "tralbum_id": props.item_id,
-                    "token": token,
-                    "count": 80,
-                }),
-            )?
-            .parse_json()?
+        self.post(
+            url,
+            serde_json::json!({
+                "tralbum_type": props.item_type,
+                "tralbum_id": props.item_id,
+                "token": token,
+                "count": 80,
+            }),
+        )?
+        .parse_json()?
     }
 
     #[culpa::try_fn]
     #[tracing::instrument(skip(self))]
     fn scrape_collections_api(&self, fan_id: u64, token: &str) -> eyre::Result<Collections> {
         let url = Url::parse("https://bandcamp.com/api/fancollection/1/collection_items")?;
-        self.client
-            .post(
-                &url,
-                &serde_json::json!({
-                    "fan_id": fan_id,
-                    "older_than_token": token,
-                    "count": 20,
-                }),
-            )?
-            .parse_json()?
+        self.post(
+            url,
+            serde_json::json!({
+                "fan_id": fan_id,
+                "older_than_token": token,
+                "count": 20,
+            }),
+        )?
+        .parse_json()?
+    }
+
+    #[culpa::try_fn]
+    #[tracing::instrument(skip(self), fields(%url))]
+    fn get(&self, url: Url) -> eyre::Result<String> {
+        let (tx, rx) = crossbeam::channel::bounded(1);
+        self.web.send(web::Request::Get { url, response: tx })?;
+        rx.recv()??
+    }
+
+    #[culpa::try_fn]
+    #[tracing::instrument(skip(self), fields(%url, %data))]
+    fn post(&self, url: Url, data: serde_json::Value) -> eyre::Result<String> {
+        let (tx, rx) = crossbeam::channel::bounded(1);
+        self.web.send(web::Request::Post {
+            url,
+            data,
+            response: tx,
+        })?;
+        rx.recv()??
     }
 }

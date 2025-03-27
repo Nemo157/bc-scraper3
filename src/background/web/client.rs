@@ -1,3 +1,4 @@
+use super::super::Stats;
 use chrono::{offset::Utc, DateTime};
 use rusqlite::{
     named_params,
@@ -18,7 +19,7 @@ pub(crate) struct Client {
     cache: rusqlite::Connection,
     last_request: Cell<Instant>,
 
-    stats: Arc<super::Stats>,
+    stats: Arc<Stats>,
 }
 
 #[derive(Debug, strum::AsRefStr)]
@@ -61,7 +62,7 @@ impl DebugExt for serde_json::Value {
 
 impl Client {
     #[culpa::try_fn]
-    pub(crate) fn new(cache_dir: &Path, stats: Arc<super::Stats>) -> eyre::Result<Self> {
+    pub(crate) fn new(cache_dir: &Path, stats: Arc<Stats>) -> eyre::Result<Self> {
         let mut cache = rusqlite::Connection::open(cache_dir.join("web-cache.sqlite"))?;
 
         let migrations = [

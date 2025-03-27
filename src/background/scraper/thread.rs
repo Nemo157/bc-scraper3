@@ -1,5 +1,4 @@
-use super::super::web::Client;
-use super::super::{Request, Response, Stats};
+use super::super::{scraper, web, Stats};
 use super::scraper::Scraper;
 use crossbeam::channel::{Receiver, SendError, Sender};
 use std::{
@@ -8,40 +7,43 @@ use std::{
 };
 use url::Url;
 
+#[culpa::try_fn]
 pub fn run(
-    client: Client,
+    web: Sender<web::Request>,
     stats: Arc<Stats>,
-    to_scrape: Receiver<Request>,
-    scraped: Sender<Response>,
-) -> std::thread::JoinHandle<()> {
-    let scraper = Scraper::new(client);
+    to_scrape: Receiver<scraper::Request>,
+    scraped: Sender<scraper::Response>,
+) -> eyre::Result<std::thread::JoinHandle<()>> {
+    let scraper = Scraper::new(web);
 
-    std::thread::spawn(move || {
-        for request in &to_scrape {
-            stats.items_queued.fetch_sub(1, Ordering::Relaxed);
-            stats.items_processing.store(true, Ordering::Relaxed);
-            if let Err(error) = handle_request(&scraper, request, &scraped) {
-                if error.is::<SendError<Response>>() {
-                    tracing::info!("scraper thread shutdown while still processing an item");
-                    return;
+    std::thread::Builder::new()
+        .name("scraper".to_owned())
+        .spawn(move || {
+            for request in &to_scrape {
+                stats.items_queued.fetch_sub(1, Ordering::Relaxed);
+                stats.items_processing.fetch_add(1, Ordering::Relaxed);
+                if let Err(error) = handle_request(&scraper, request, &scraped) {
+                    if error.is::<SendError<scraper::Response>>() {
+                        tracing::info!("scraper thread shutdown while still processing an item");
+                        return;
+                    }
+                    tracing::error!(?error, "failed handling scrape request");
                 }
-                tracing::error!(?error, "failed handling scrape request");
+                stats.items_processing.fetch_sub(1, Ordering::Relaxed);
+                stats.items_completed.fetch_add(1, Ordering::Relaxed);
             }
-            stats.items_processing.store(false, Ordering::Relaxed);
-            stats.items_completed.fetch_add(1, Ordering::Relaxed);
-        }
-    })
+        })?
 }
 
 #[culpa::try_fn]
 #[tracing::instrument(skip(scraper, scraped))]
 fn handle_request(
     scraper: &Scraper,
-    request: Request,
-    scraped: &Sender<Response>,
+    request: scraper::Request,
+    scraped: &Sender<scraper::Response>,
 ) -> eyre::Result<()> {
     match request {
-        Request::Artist { url } => {
+        scraper::Request::Artist { url } => {
             let artist = RefCell::new(None);
             scraper.scrape_artist(
                 &Url::parse(&url)?,
@@ -50,7 +52,7 @@ fn handle_request(
                     Ok(())
                 },
                 |releases| {
-                    scraped.send(Response::Releases(
+                    scraped.send(scraper::Response::Releases(
                         artist.borrow().as_ref().unwrap().0.clone(),
                         releases,
                     ))?;
@@ -58,10 +60,10 @@ fn handle_request(
                 },
             )?;
             let (artist, details) = artist.replace(None).take().unwrap();
-            scraped.send(Response::Artist(artist, details))?;
+            scraped.send(scraper::Response::Artist(artist, details))?;
         }
 
-        Request::Release { url } => {
+        scraper::Request::Release { url } => {
             let release = RefCell::new(None);
             scraper.scrape_release(
                 &Url::parse(&url)?,
@@ -70,14 +72,14 @@ fn handle_request(
                     Ok(())
                 },
                 |artist| {
-                    scraped.send(Response::ReleaseArtist(
+                    scraped.send(scraper::Response::ReleaseArtist(
                         release.borrow().as_ref().unwrap().0.clone(),
                         artist,
                     ))?;
                     Ok(())
                 },
                 |fans| {
-                    scraped.send(Response::Fans(
+                    scraped.send(scraper::Response::Fans(
                         release.borrow().as_ref().unwrap().0.clone(),
                         fans,
                     ))?;
@@ -85,10 +87,10 @@ fn handle_request(
                 },
             )?;
             let (release, details) = release.replace(None).take().unwrap();
-            scraped.send(Response::Release(release, details))?;
+            scraped.send(scraper::Response::Release(release, details))?;
         }
 
-        Request::User { url } => {
+        scraper::Request::User { url } => {
             let user = RefCell::new(None);
             scraper.scrape_fan(
                 &Url::parse(&url)?,
@@ -97,7 +99,7 @@ fn handle_request(
                     Ok(())
                 },
                 |collection| {
-                    scraped.send(Response::Collection(
+                    scraped.send(scraper::Response::Collection(
                         user.borrow().as_ref().unwrap().0.clone(),
                         collection,
                     ))?;
@@ -105,7 +107,7 @@ fn handle_request(
                 },
             )?;
             let (user, details) = user.replace(None).take().unwrap();
-            scraped.send(Response::User(user, details))?;
+            scraped.send(scraper::Response::User(user, details))?;
         }
     }
 }

@@ -1,10 +1,9 @@
-use crate::data::{Artist, ArtistDetails, Release, ReleaseDetails, User, UserDetails};
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use std::{
     collections::HashSet,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
 };
@@ -13,30 +12,13 @@ pub mod diagnostic;
 mod scraper;
 mod web;
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
-pub enum Request {
-    Artist { url: String },
-    Release { url: String },
-    User { url: String },
-}
-
-#[derive(Debug)]
-pub enum Response {
-    Artist(Artist, ArtistDetails),
-    Release(Release, ReleaseDetails),
-    User(User, UserDetails),
-
-    Fans(Release, Vec<User>),
-    ReleaseArtist(Release, Artist),
-    Collection(User, Vec<Release>),
-    Releases(Artist, Vec<Release>),
-}
+pub use scraper::{Request, Response};
 
 #[derive(Debug, Default)]
 struct Stats {
     items_duplicate: AtomicUsize,
     items_queued: AtomicUsize,
-    items_processing: AtomicBool,
+    items_processing: AtomicUsize,
     items_completed: AtomicUsize,
 
     web_requests: AtomicUsize,
@@ -57,15 +39,64 @@ impl Scraper {
     #[culpa::try_fn]
     pub fn new(cache_dir: &Path) -> eyre::Result<Self> {
         let stats = Arc::new(Stats::default());
-        let client = self::web::Client::new(cache_dir, stats.clone())?;
+        let client = self::web::client::Client::new(cache_dir, stats.clone())?;
+
         let (to_scrape_tx, to_scrape_rx) = crossbeam::channel::unbounded();
-        let (scraped_tx, scraped_rx) = crossbeam::channel::bounded(1);
-        let threads = vec![self::scraper::thread::run(
-            client,
-            stats.clone(),
-            to_scrape_rx,
-            scraped_tx,
-        )];
+        let (scraped_tx, scraped_rx) = crossbeam::channel::bounded(8);
+        let (web_tx, web_rx) = crossbeam::channel::bounded(1);
+
+        let threads = vec![
+            self::web::thread::run(client, web_rx)?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_tx.clone(),
+                stats.clone(),
+                to_scrape_rx.clone(),
+                scraped_tx.clone(),
+            )?,
+        ];
+
         Scraper {
             threads,
             stats,
