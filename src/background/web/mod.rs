@@ -1,8 +1,8 @@
 use crossbeam::channel::Sender;
 use url::Url;
 
+pub mod cache;
 pub mod client;
-pub mod thread;
 
 pub enum Request {
     Get {

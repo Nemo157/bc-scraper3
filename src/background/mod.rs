@@ -39,58 +39,82 @@ impl Scraper {
     #[culpa::try_fn]
     pub fn new(cache_dir: &Path) -> eyre::Result<Self> {
         let stats = Arc::new(Stats::default());
-        let client = self::web::client::Client::new(cache_dir, stats.clone())?;
 
         let (to_scrape_tx, to_scrape_rx) = crossbeam::channel::unbounded();
         let (scraped_tx, scraped_rx) = crossbeam::channel::bounded(8);
         let (web_tx, web_rx) = crossbeam::channel::bounded(1);
+        let (web_cache_tx, web_cache_rx) = crossbeam::channel::bounded(1);
 
         let threads = vec![
-            self::web::thread::run(client, web_rx)?,
-            self::scraper::thread::run(
+            self::web::client::run(web_rx)?,
+            self::web::cache::run(
+                cache_dir,
+                stats.clone(),
+                web_cache_rx.clone(),
                 web_tx.clone(),
+            )?,
+            self::web::cache::run(
+                cache_dir,
+                stats.clone(),
+                web_cache_rx.clone(),
+                web_tx.clone(),
+            )?,
+            self::web::cache::run(
+                cache_dir,
+                stats.clone(),
+                web_cache_rx.clone(),
+                web_tx.clone(),
+            )?,
+            self::web::cache::run(
+                cache_dir,
+                stats.clone(),
+                web_cache_rx.clone(),
+                web_tx.clone(),
+            )?,
+            self::scraper::thread::run(
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
             )?,
             self::scraper::thread::run(
-                web_tx.clone(),
+                web_cache_tx.clone(),
                 stats.clone(),
                 to_scrape_rx.clone(),
                 scraped_tx.clone(),
