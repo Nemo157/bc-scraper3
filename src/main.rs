@@ -92,7 +92,7 @@ fn main() -> eyre::Result<()> {
         .insert_resource(Time::<Fixed>::from_hz(20.0))
         .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_millis(50)))
         .insert_resource(args)
-        .insert_resource(background::Thread::spawn(dirs.cache_dir())?)
+        .insert_resource(background::Scraper::new(dirs.cache_dir())?)
         .insert_resource(KnownEntities::default())
         .insert_resource(Runtime::new())
         .add_plugins((
@@ -119,7 +119,7 @@ fn main() -> eyre::Result<()> {
 #[derive(Component)]
 struct RelationshipParent;
 
-fn setup(mut commands: Commands, args: Res<Args>, scraper: Res<background::Thread>) {
+fn setup(mut commands: Commands, args: Res<Args>, scraper: Res<background::Scraper>) {
     let relationship_parent = commands
         .spawn((Visibility::Visible, Transform::IDENTITY, RelationshipParent))
         .id();
@@ -178,7 +178,7 @@ fn keyinput(
 
 fn receive(
     mut commands: Commands,
-    scraper: Res<background::Thread>,
+    scraper: Res<background::Scraper>,
     mut known: ResMut<KnownEntities>,
     positions: Query<&PredictedPosition>,
     mut scrape: Query<&mut Scrape>,

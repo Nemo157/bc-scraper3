@@ -1,3 +1,4 @@
+use super::super::web::Client;
 use crate::data::{
     Artist, ArtistDetails, ArtistId, Release, ReleaseDetails, ReleaseId, ReleaseType, User,
     UserDetails, UserId,
@@ -7,7 +8,7 @@ use url::Url;
 
 #[derive(Debug)]
 pub(crate) struct Scraper {
-    client: super::web::Client,
+    client: Client,
 }
 
 trait JsonExt {
@@ -284,7 +285,7 @@ struct ClientItem {
 }
 
 impl Scraper {
-    pub(crate) fn new(client: super::web::Client) -> Self {
+    pub(crate) fn new(client: Client) -> Self {
         Self { client }
     }
 

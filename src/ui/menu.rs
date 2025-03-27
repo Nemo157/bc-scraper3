@@ -180,7 +180,7 @@ fn button_out(
 
 fn button_click(
     trigger: Trigger<Pointer<Click>>,
-    scraper: Res<crate::background::Thread>,
+    scraper: Res<crate::background::Scraper>,
     query: Query<&Action, With<Button>>,
     nearest: Option<Res<Nearest>>,
     mut data: Query<(&Url, &EntityType, &mut Scrape)>,

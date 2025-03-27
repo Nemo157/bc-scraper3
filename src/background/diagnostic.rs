@@ -49,7 +49,7 @@ impl bevy::app::Plugin for Plugin {
     }
 }
 
-fn update(mut diagnostics: Diagnostics, scraper: Res<super::Thread>) {
+fn update(mut diagnostics: Diagnostics, scraper: Res<super::Scraper>) {
     diagnostics.add_measurement(&self::items::COMPLETED, || {
         scraper.stats.items_completed.load(Ordering::Relaxed) as f64
     });

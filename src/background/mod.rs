@@ -1,7 +1,6 @@
 use crate::data::{Artist, ArtistDetails, Release, ReleaseDetails, User, UserDetails};
-use crossbeam::channel::{Receiver, SendError, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use std::{
-    cell::RefCell,
     collections::HashSet,
     path::Path,
     sync::{
@@ -9,10 +8,9 @@ use std::{
         Arc, Mutex,
     },
 };
-use url::Url;
 
 pub mod diagnostic;
-mod scrape;
+mod scraper;
 mod web;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -47,25 +45,29 @@ struct Stats {
 }
 
 #[derive(Debug, bevy::ecs::system::Resource)]
-pub struct Thread {
-    thread: Option<std::thread::JoinHandle<()>>,
+pub struct Scraper {
+    threads: Vec<std::thread::JoinHandle<()>>,
     stats: Arc<Stats>,
     done: Mutex<HashSet<Request>>,
     to_scrape_tx: Option<Sender<Request>>,
     scraped_rx: Option<Receiver<Response>>,
 }
 
-impl Thread {
+impl Scraper {
     #[culpa::try_fn]
-    pub fn spawn(cache_dir: &Path) -> eyre::Result<Self> {
+    pub fn new(cache_dir: &Path) -> eyre::Result<Self> {
         let stats = Arc::new(Stats::default());
         let client = self::web::Client::new(cache_dir, stats.clone())?;
         let (to_scrape_tx, to_scrape_rx) = crossbeam::channel::unbounded();
         let (scraped_tx, scraped_rx) = crossbeam::channel::bounded(1);
-        let background = Background::new(client, stats.clone(), to_scrape_rx, scraped_tx)?;
-        let thread = Some(std::thread::spawn(move || background.run()));
-        Thread {
-            thread,
+        let threads = vec![self::scraper::thread::run(
+            client,
+            stats.clone(),
+            to_scrape_rx,
+            scraped_tx,
+        )];
+        Scraper {
+            threads,
             stats,
             done: Mutex::new(HashSet::new()),
             to_scrape_tx: Some(to_scrape_tx),
@@ -93,125 +95,13 @@ impl Thread {
     }
 }
 
-impl Drop for Thread {
+impl Drop for Scraper {
     fn drop(&mut self) {
         self.to_scrape_tx.take();
         self.scraped_rx.take();
-        if let Err(e) = self.thread.take().unwrap().join() {
-            std::panic::resume_unwind(e);
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Background {
-    scraper: self::scrape::Scraper,
-    stats: Arc<Stats>,
-    to_scrape: Receiver<Request>,
-    scraped: Sender<Response>,
-}
-
-impl Background {
-    #[culpa::try_fn]
-    fn new(
-        client: self::web::Client,
-        stats: Arc<Stats>,
-        to_scrape: Receiver<Request>,
-        scraped: Sender<Response>,
-    ) -> eyre::Result<Self> {
-        Self {
-            scraper: self::scrape::Scraper::new(client),
-            stats,
-            to_scrape,
-            scraped,
-        }
-    }
-
-    fn run(&self) {
-        for request in &self.to_scrape {
-            self.stats.items_queued.fetch_sub(1, Ordering::Relaxed);
-            self.stats.items_processing.store(true, Ordering::Relaxed);
-            if let Err(error) = self.handle_request(request) {
-                if error.is::<SendError<Response>>() {
-                    tracing::info!("background thread shutdown while still processing an item");
-                    return;
-                }
-                tracing::error!(?error, "failed handling scrape request");
-            }
-            self.stats.items_processing.store(false, Ordering::Relaxed);
-            self.stats.items_completed.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    #[culpa::try_fn]
-    #[tracing::instrument(skip(self))]
-    fn handle_request(&self, request: Request) -> eyre::Result<()> {
-        match request {
-            Request::Artist { url } => {
-                let artist = RefCell::new(None);
-                self.scraper.scrape_artist(
-                    &Url::parse(&url)?,
-                    |new_artist, details| {
-                        artist.replace(Some((new_artist, details)));
-                        Ok(())
-                    },
-                    |releases| {
-                        self.scraped.send(Response::Releases(
-                            artist.borrow().as_ref().unwrap().0.clone(),
-                            releases,
-                        ))?;
-                        Ok(())
-                    },
-                )?;
-                let (artist, details) = artist.replace(None).take().unwrap();
-                self.scraped.send(Response::Artist(artist, details))?;
-            }
-
-            Request::Release { url } => {
-                let release = RefCell::new(None);
-                self.scraper.scrape_release(
-                    &Url::parse(&url)?,
-                    |new_release, details| {
-                        release.replace(Some((new_release, details)));
-                        Ok(())
-                    },
-                    |artist| {
-                        self.scraped.send(Response::ReleaseArtist(
-                            release.borrow().as_ref().unwrap().0.clone(),
-                            artist,
-                        ))?;
-                        Ok(())
-                    },
-                    |fans| {
-                        self.scraped.send(Response::Fans(
-                            release.borrow().as_ref().unwrap().0.clone(),
-                            fans,
-                        ))?;
-                        Ok(())
-                    },
-                )?;
-                let (release, details) = release.replace(None).take().unwrap();
-                self.scraped.send(Response::Release(release, details))?;
-            }
-
-            Request::User { url } => {
-                let user = RefCell::new(None);
-                self.scraper.scrape_fan(
-                    &Url::parse(&url)?,
-                    |fan, details| {
-                        user.replace(Some((fan, details)));
-                        Ok(())
-                    },
-                    |collection| {
-                        self.scraped.send(Response::Collection(
-                            user.borrow().as_ref().unwrap().0.clone(),
-                            collection,
-                        ))?;
-                        Ok(())
-                    },
-                )?;
-                let (user, details) = user.replace(None).take().unwrap();
-                self.scraped.send(Response::User(user, details))?;
+        for thread in self.threads.drain(..) {
+            if let Err(e) = thread.join() {
+                std::panic::resume_unwind(e);
             }
         }
     }
